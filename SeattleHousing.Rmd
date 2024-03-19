@@ -125,6 +125,7 @@ ggplot() +
   theme_void()
 
 ```
+
 ## Clean Safety data
 ```{r}
 
@@ -269,17 +270,17 @@ Next, we will look at correlations for the crime variables (kNN)
 ```{r crime_corr}
 
 # Clean and prepare the data
-boston_cleaned <- boston.sf %>%
+Seattle_Crime <- Seattle.sf_tracts2 %>%
   st_drop_geometry() %>%                   # Remove geometry column (if present)
-  mutate(Age = 2015 - YR_BUILT) %>%        # Calculate Age based on the year built
-  select(SalePrice, starts_with("crime_")) %>%  # Select variables related to crime
-  filter(SalePrice <= 1000000)             # Filter data based on SalePrice
+  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter) %>%        # Calculate Age based on the year built
+  select(price, starts_with("crime_")) %>%  # Select variables related to crime
+  filter(price <= 1000000)             # Filter data based on SalePrice
 
 # Reshape data from wide to long format
-boston_long <- gather(boston_cleaned, Variable, Value, -SalePrice)
+Seattle_Crime_long <- gather(Seattle_Crime, Variable, Value, -price)
 
 # Create scatterplot with linear regression lines for each variable
-ggplot(boston_long, aes(Value, SalePrice)) +   # Set up the plot
+ggplot(Seattle_Crime_long, aes(Value, price)) +   # Set up the plot
   geom_point(size = .5) +                       # Add points for each data point
   geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +  # Add linear regression lines
   facet_wrap(~Variable, nrow = 1, scales = "free") +  # Create separate plots for each variable
