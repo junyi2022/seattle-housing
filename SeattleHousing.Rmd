@@ -335,13 +335,54 @@ numericVars %>%
 
 Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
   mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter) %>%  
-  select(-zipcode, -quintiles, -crime.Buffer, -school.Buffer, -hosp.Buffer, -parks.Buffer, -id, -date) %>% 
+  select(-zipcode, -quintiles, -crime.Buffer, -school.Buffer, -hosp.Buffer, -parks.Buffer, -id, -date, -starts_with("crime_nn"), -Age, -waterfront, -school_count, -parks_count, -bedrooms, -school_nn3, -school_nn4, -school_nn5, -hosp_nn2, -yr_renovated, -floors, -bathrooms, -price_per_sqft) %>% 
   filter(price <= 2000000) 
+
+
 
 reg1 <- lm(price ~ ., data = Seattle_final)
 
 summary(reg1)
 ```
+
+
+#Training and Testing Datasets
+
+```{r traintest}
+
+# Split the dataset into a training set and a test set using stratified sampling
+inTrain <- createDataPartition(
+              y = paste(Seattle_final$sqft_lot, Seattle_final$view, 
+                        Seattle_final$yr_built, Seattle_final$school_nn1), 
+              p = .60, list = FALSE)  # Create a vector of indices for the training set
+
+# Subset the dataset to create the training set
+Seattle.training <- Seattle_final[inTrain,]  # Training set
+# Subset the dataset to create the test set
+Seattle.test <- Seattle_final[-inTrain,]     # Test set
+ 
+# Fit a linear regression model to predict Sales Price using selected predictors
+reg.training <- 
+  lm(price ~ ., data = as.data.frame(Seattle.training))
+
+summary(reg.training)
+
+# Make predictions on the test set and evaluate model performance
+
+Seattle.test <-
+  Seattle.test %>%  # Pipe the test set into the following operations
+  # Add a column indicating the type of regression model used
+  mutate(Regression = "Baseline Regression",
+         # Predict sale prices using the trained regression model
+         SalePrice.Predict = predict(reg.training, Seattle.test),
+         # Calculate the difference between predicted and actual sale prices
+         SalePrice.Error = SalePrice.Predict - price,
+         # Calculate the absolute difference between predicted and actual sale prices
+         SalePrice.AbsError = abs(SalePrice.Predict - price),
+         # Calculate the absolute percentage error
+         SalePrice.APE = (abs(SalePrice.Predict - price)) / price)
+```
+
 
 ## Marginal Response Plots
 
