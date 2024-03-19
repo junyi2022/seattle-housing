@@ -335,7 +335,7 @@ numericVars %>%
 
 Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
   mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter) %>%  
-  select(-zipcode, -quintiles, -crime.Buffer, -school.Buffer, -hosp.Buffer, -parks.Buffer, -id, -date) %>% 
+  select(-zipcode, -quintiles, -crime.Buffer, -school.Buffer, -hosp.Buffer, -parks.Buffer, -id, -date, -starts_with("crime_nn"), -Age, -waterfront, -school_count, -parks_count, -bedrooms, -school_nn3, -school_nn4, -school_nn5, -hosp_nn2, -yr_renovated, -floors, -bathrooms, -price_per_sqft) %>% 
   filter(price <= 2000000) 
 
 reg1 <- lm(price ~ ., data = Seattle_final)
