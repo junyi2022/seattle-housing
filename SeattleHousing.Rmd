@@ -1,6 +1,6 @@
 ---
 title: "Predict Housing Value"
-author: "Ziyi GUO"
+author: "Ziyi GUO, Junyi Yang"
 output: html_document
 ---
 
@@ -82,7 +82,7 @@ Crime.sf <-
 
 ## Amenities
 School <- 
-  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/Private_School.geojson") %>%
+  st_read("./dataWithoutcrime/Private_School.geojson") %>%
   st_transform(crs = 2926)
 
 Parks <- 
