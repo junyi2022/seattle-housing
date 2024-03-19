@@ -93,6 +93,15 @@ Hospital <-
   st_read("C:/Users/25077/Desktop/PPA_Midterm/data/Hospital.geojson") %>%
   st_transform(crs = 2926)
 
+## Transportation
+
+# street car
+
+# Crosswalk
+crosswalk <- 
+  st_read("C:/Users/25077/Desktop/MUSA 508_PPA/5_/github/local/seattle-housing/dataWithoutcrime/Marked_Crosswalks.geojson") %>%
+  st_transform(crs = 2926)
+
 
 ```
 
@@ -238,6 +247,18 @@ Seattle.sf_tracts2$parks.Buffer <- Seattle.sf_tracts2 %>%
 
 ```
 
+## crosswalk
+
+```{r}
+
+#Parks are polygon hard to get distance
+Seattle.sf_tracts2$crosswalk.Buffer <- Seattle.sf_tracts2 %>% 
+    st_buffer(1320) %>% 
+    aggregate(dplyr::select(crosswalk) %>% 
+    mutate(counter = 1), ., sum)
+
+```
+
 
 # Analysis Variables
 
@@ -334,11 +355,12 @@ numericVars %>%
 ```{r mutlivariate_regression}
 
 Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
-  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter) %>%  
-  select(-zipcode, -quintiles, -crime.Buffer, -school.Buffer, -hosp.Buffer, -parks.Buffer, -id, -date, -starts_with("crime_nn"), -Age, -waterfront, -school_count, -parks_count, -bedrooms, -school_nn3, -school_nn4, -school_nn5, -hosp_nn2, -yr_renovated, -floors, -bathrooms, -price_per_sqft) %>% 
+  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter) %>%  
+  select(Age, price, bedrooms, bathrooms, sqft_living, floors, waterfront, view, condition, grade, crime_count, hosp_nn1, school_nn1, parks_count, cross_count) %>% 
   filter(price <= 2000000) 
 
-
+Seattle_final <- Seattle_final %>%
+  mutate_all(~replace(., is.na(.), 0))
 
 reg1 <- lm(price ~ ., data = Seattle_final)
 
@@ -383,48 +405,27 @@ Seattle.test <-
          SalePrice.APE = (abs(SalePrice.Predict - price)) / price)
 ```
 
+## examine the model (diagnose)
 
-## Marginal Response Plots
+```{r}
 
-Let's try some of these out. They help you learn more about the relationships in the model.
+#MAE
+mean(Seattle.test$SalePrice.AbsError, na.rm = T)
 
-
-Plot of Marginal Response:
-
-effect_plot() is used to visualize the marginal response of the outcome variable (dependent variable) with respect to the predictor variable R_BDRMS in the linear regression model reg1.
-pred = R_BDRMS specifies R_BDRMS as the predictor variable to be plotted.
-interval = TRUE adds confidence intervals to the plot.
-plot.points = TRUE includes individual data points in the plot.
-
-Interpretation of Marginal Effects:
-
-The plot of marginal response helps visualize how the outcome variable changes as a predictor variable varies, holding other variables constant.
-It provides insights into the relationship between the predictor variable and the outcome variable, allowing researchers to understand the direction and strength of the relationship.
+#MAPE
+mean(Seattle.test$SalePrice.APE, na.rm = T)
 
 
-Plot Coefficients:
-
-plot_summs() is used to plot coefficients from the regression model reg1.
-scale = TRUE scales the coefficients for better comparison if the predictors are on different scales.
-Plot Multiple Model Coefficients:
-
-plot_summs() is also used to plot coefficients from multiple regression models.
-In the third line, list(reg1, livingReg) passes a list of regression models (reg1 and livingReg) to be plotted together for comparison.
-
-
-```{r effect_plots}
 ## Plot of marginal response
-effect_plot(reg1, pred = R_BDRMS, interval = TRUE, plot.points = TRUE)
+effect_plot(reg1, pred = crime_count, interval = TRUE, plot.points = TRUE)
 
 ## Plot coefficients
 plot_summs(reg1, scale = TRUE)
 
 ## plot multiple model coeffs
-plot_summs(reg1, livingReg)
-
+plot_summs(reg1, crime_count)
 
 ```
-
 
 # cross validation
 This is a slightly nicer way of doing the CV as compared to the warm-up example.
@@ -441,8 +442,8 @@ control <- trainControl(method = "cv",    # Use k-fold cross-validation
                         summaryFunction = defaultSummary)  # Use default summary function
 
 # Train the linear regression model using k-fold cross-validation
-lm_cv <- train(SalePrice ~ LivingArea,  # Formula for the linear regression model
-               data = boston_sub_200k,  # Dataset
+lm_cv <- train(price ~ sqft_living,  # Formula for the linear regression model
+               data = Seattle_final,  # Dataset
                method = "lm",           # Specify "lm" for linear regression
                trControl = control)     # Use the defined control parameters
 
@@ -453,34 +454,21 @@ print(lm_cv)
 # Plot observed versus predicted values
 plot(lm_cv$pred$obs, lm_cv$pred$pred, 
      xlab = "Observed", ylab = "Predicted", 
-     main = "Observed vs Predicted Values")
-
-# Add a diagonal line for reference
-abline(0, 1, col = "red")
+     main = "Observed vs Predicted Values") +
+     abline(0, 1, col = "red")
 
 
 ```
 
 
-RMSE (Root Mean Squared Error):
 
-RMSE is the square root of the average of the squared differences between predicted and observed values.
-It penalizes large errors more heavily than small errors because it squares the differences.
-RMSE is sensitive to outliers because of the squaring operation.
-
-MAE (Mean Absolute Error):
-
-MAE is the average of the absolute differences between predicted and observed values.
-It treats all errors equally regardless of their magnitude.
-MAE is less sensitive to outliers compared to RMSE because it does not square the differences.
+RMSE, MAE
 
 
-
-The case of a LOOCV
 ```{r loocv}
 # Set up leave-one-out cross-validation
 control <- trainControl(method = "LOOCV",     # Use leave-one-out cross-validation
-                        number = nrow(boston_sub_200k),  # Number of folds = number of observations
+                        number = nrow(Seattle_final),  # Number of folds = number of observations
                         verboseIter = TRUE,  # Show verbose output
                         returnData = FALSE,  # Don't return resampled data
                         savePredictions = TRUE,  # Save predictions
@@ -488,8 +476,8 @@ control <- trainControl(method = "LOOCV",     # Use leave-one-out cross-validati
                         summaryFunction = defaultSummary)  # Use default summary function
 
 # Train the linear regression model using leave-one-out cross-validation
-lm_loocv <- train(SalePrice ~ LivingArea,  # Formula for the linear regression model
-                  data = boston_sub_200k,  # Dataset
+lm_loocv <- train(price ~ sqft_living,  # Formula for the linear regression model
+                  data = Seattle_final,  # Dataset
                   method = "lm",           # Specify "lm" for linear regression
                   trControl = control)     # Use the defined control parameters
 
@@ -498,12 +486,7 @@ print(lm_loocv)
 
 ```
 
-How to interpret?
-Overall, based on these metrics:
-
-The model's RMSE and MAE suggest that the average prediction error is approximately 245,389.9 and 166,415.2, respectively.
-
-The Rsquared value indicates that around 10.78% of the variability in SalePrice is explained by the model's predictor variables.
+The Rsquared value indicates that around XX.XX% of the variability in SalePrice is explained by the model's predictor variables.
 
 
 
