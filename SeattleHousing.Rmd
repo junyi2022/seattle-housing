@@ -1,0 +1,573 @@
+---
+title: "Predict Housing Value"
+author: "Ziyi GUO"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+
+# You can set some global options for knitting chunks
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load some libraries
+
+library(tidyverse)
+library(sf)
+library(spdep)
+library(caret)
+library(ckanr)
+library(FNN)
+library(grid)
+library(gridExtra)
+library(ggcorrplot) # plot correlation plot
+library(corrr)      # another way to plot correlation plot
+library(kableExtra)
+library(jtools)     # for regression model plots
+library(ggstance) # to support jtools plots
+library(ggpubr)    # plotting R^2 value on ggplot point scatter
+library(broom.mixed) # needed for effects plots
+library(RColorBrewer)
+library(stargazer)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+
+
+# functions and data directory
+root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
+
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
+
+```
+
+
+## Data Wrangling
+
+```{r get data}
+
+# initial housing data
+housingData <- 
+  read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/data/kc_house_data.csv"))
+
+Seattle.sf <- 
+  housingData %>% 
+  st_as_sf(coords = c("long", "lat"), crs = 4326, agr = "constant") %>%
+  st_transform(crs = 2926)%>%
+  mutate(price_per_sqft = price / sqft_lot)
+
+# Seattle geo_Tracts
+tracts <- 
+  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/2010_Census_Tract_Seattle.geojson") %>%
+  st_transform(crs = 2926)
+
+#Cut the housing data to fit into the Seattle boundary
+Seattle.sf_tracts <- st_intersection(Seattle.sf, tracts)
+
+Seattle.sf_tracts2 <- Seattle.sf_tracts %>%
+  select(id, date, price ,bedrooms, bathrooms, sqft_living, sqft_lot, floors, waterfront, view, condition, grade, yr_built, yr_renovated, zipcode, price_per_sqft, geometry)
+
+
+# Add-in Data
+## social
+crime <- 
+  read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/data/SPD_Crime_Data.csv"))
+
+Crime.sf <- 
+  crime %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326, agr = "constant") %>%
+  st_transform(crs = 2926)
+
+
+## Amenities
+School <- 
+  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/Private_School.geojson") %>%
+  st_transform(crs = 2926)
+
+Parks <- 
+  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/seattle-parks-osm.geojson") %>%
+  st_transform(crs = 2926)
+
+Hospital <- 
+  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/Hospital.geojson") %>%
+  st_transform(crs = 2926)
+
+
+```
+
+## Summarize and preview the variables
+-stargazer
+
+```{r preview the data}
+
+
+```
+## Current housing price map
+
+```{r}
+Seattle.sf_tracts2$quintiles <- ntile(Seattle.sf_tracts2$price_per_sqft, 5)
+
+# Convert quintiles to a factor if not already done
+Seattle.sf_tracts2$quintiles <- as.factor(Seattle.sf_tracts2$quintiles)
+
+# Define the palette
+Palette5 <- brewer.pal(5, "YlGnBu")
+
+# Generate the plot
+ggplot() +
+  geom_sf(data = tracts, fill = "lightgrey", col = "white") +
+  geom_sf(data = Seattle.sf_tracts2, aes(colour = quintiles), show.legend = "point", size = .25) +
+  scale_colour_manual(values = Palette5,
+                      labels = c("Low", "Relatively Low", "Medium", "Relatively High", "High"),
+                      name = "Price Per Square Foot Quintiles") +
+  labs(title = "Price Per Square Foot, Seattle") +
+  theme_void()
+
+```
+## Clean Safety data
+```{r}
+
+#review crime types
+crime %>% 
+group_by(Offense.Parent.Group) %>%
+  summarize(count = n()) %>%
+  arrange(-count) %>% top_n(10) %>%
+  kable() %>%
+  kable_styling()
+
+Seattle.sf_tracts2$crime.Buffer <- Seattle.sf_tracts2 %>% 
+    st_buffer(660) %>% 
+    aggregate(dplyr::select(Crime.sf) %>% 
+    mutate(counter = 1), ., sum)
+
+## Nearest Neighbor Feature
+Seattle.sf_tracts2 <-
+  Seattle.sf_tracts2 %>% 
+    mutate(
+      crime_nn1 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Crime.sf), k = 1),
+      
+      crime_nn2 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Crime.sf), k = 2), 
+      
+      crime_nn3 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Crime.sf), k = 3), 
+      
+      crime_nn4 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Crime.sf), k = 4), 
+      
+      crime_nn5 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Crime.sf), k = 5)) 
+
+```
+
+
+## Schools
+
+```{r}
+
+#count the school number within the buffer
+Seattle.sf_tracts2$school.Buffer <- Seattle.sf_tracts2 %>% 
+    st_buffer(5280) %>% 
+    aggregate(dplyr::select(School) %>% 
+    mutate(counter = 1), ., sum)
+
+## Nearest Neighbor Feature
+Seattle.sf_tracts2 <-
+  Seattle.sf_tracts2 %>% 
+    mutate(
+      school_nn1 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(School), k = 1),
+      
+      school_nn2 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(School), k = 2), 
+      
+      school_nn3 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(School), k = 3), 
+      
+      school_nn4 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(School), k = 4), 
+      
+      school_nn5 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(School), k = 5))
+
+```
+
+
+## Hospitals
+
+```{r}
+
+Seattle.sf_tracts2$hosp.Buffer <- Seattle.sf_tracts2 %>% 
+    st_buffer(5280) %>% 
+    aggregate(dplyr::select(Hospital) %>% 
+    mutate(counter = 1), ., sum)
+
+## Nearest Neighbor Feature
+Seattle.sf_tracts2 <-
+  Seattle.sf_tracts2 %>% 
+    mutate(
+      hosp_nn1 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Hospital), k = 1),
+      
+      hosp_nn2 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Hospital), k = 2), 
+      
+      hosp_nn3 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Hospital), k = 3), 
+      
+      hosp_nn4 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Hospital), k = 4), 
+      
+      hosp_nn5 = nn_function(st_coordinates(Seattle.sf_tracts2), 
+                              st_coordinates(Hospital), k = 5))
+
+```
+
+## Parks
+
+```{r}
+
+#Parks are polygon hard to get distance
+Seattle.sf_tracts2$parks.Buffer <- Seattle.sf_tracts2 %>% 
+    st_buffer(1320) %>% 
+    aggregate(dplyr::select(Parks) %>% 
+    mutate(counter = 1), ., sum)
+
+```
+
+
+# Analysis Variables
+
+## Analyzing associations
+
+
+```{r Correlation}
+
+# Remove geometry column (if present), calculate Age, and select relevant variables
+Seattle <- st_drop_geometry(Seattle.sf_tracts2) %>%
+  mutate(Age = 2024 - yr_built, parksCount = parks.Buffer$counter, crimeCount=crime.Buffer$counter) %>%
+  select(price, sqft_lot, Age, crime_nn1, parksCount, waterfront, crimeCount) %>%
+  filter(Age < 500)
+ 
+
+Seattle_long <- gather(Seattle, Variable, Value, -price)
+
+# Create scatterplot with linear regression lines for each variable
+ggplot(Seattle_long, aes(Value, price)) +   # Set up the plot
+  geom_point(size = .5) +                       # Add points for each data point
+  geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +  # Add linear regression lines
+  facet_wrap(~Variable, ncol = 3, scales = "free") +  # Create separate plots for each variable
+  labs(title = "Price as a function of continuous variables") +  # Set plot title
+  theme_minimal()  # Apply a minimal theme to the plot
+
+```
+
+Next, we will look at correlations for the crime variables (kNN)
+
+```{r crime_corr}
+
+# Clean and prepare the data
+boston_cleaned <- boston.sf %>%
+  st_drop_geometry() %>%                   # Remove geometry column (if present)
+  mutate(Age = 2015 - YR_BUILT) %>%        # Calculate Age based on the year built
+  select(SalePrice, starts_with("crime_")) %>%  # Select variables related to crime
+  filter(SalePrice <= 1000000)             # Filter data based on SalePrice
+
+# Reshape data from wide to long format
+boston_long <- gather(boston_cleaned, Variable, Value, -SalePrice)
+
+# Create scatterplot with linear regression lines for each variable
+ggplot(boston_long, aes(Value, SalePrice)) +   # Set up the plot
+  geom_point(size = .5) +                       # Add points for each data point
+  geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +  # Add linear regression lines
+  facet_wrap(~Variable, nrow = 1, scales = "free") +  # Create separate plots for each variable
+  labs(title = "Price as a function of continuous variables") +  # Set plot title
+  theme_minimal()  # Apply a minimal theme to the plot
+
+```
+
+## Correlation matrix
+
+A correlation matrix gives us the pairwise correlation of each set of features in our data. It is usually advisable to include the target/outcome variable in this so we can understand which features are related to it.
+
+Some things to notice in this code; we use `select_if()` to select only the features that are numeric. This is really handy when you don't want to type or hard-code the names of your features; `ggcorrplot()` is a function from the `ggcorrplot` package.
+
+**Let's take a few minutes to interpret this**
+
+```{r correlation_matrix}
+# Select only numeric variables and remove rows with missing values
+numericVars <- Seattle.sf_tracts2 %>%
+  st_drop_geometry() %>%  # Remove geometry column if present
+  select_if(is.numeric) %>%  # Select only numeric variables
+  na.omit()  # Remove rows with missing values
+
+# Calculate correlation matrix
+correlation_matrix <- cor(numericVars)
+
+# Create correlation plot
+ggcorrplot(
+  correlation_matrix,  # Correlation matrix
+  p.mat = cor_pmat(numericVars),  # p-values for significance
+  colors = c("#25CB10", "white", "#FA7800"),  # Custom color palette
+  type = "lower",  # Lower triangle of the correlation matrix
+  insig = "blank"  # Hide insignificant correlations
+) +
+labs(title = "Correlation across numeric variables")  # Set plot title
+
+
+# yet another way to plot the correlation plot using the corrr library
+numericVars %>% 
+  correlate() %>% 
+  autoplot() +
+  geom_text(aes(label = round(r,digits=2)),size = 2)
+
+```
+
+# Univarite correlation -> multi-variate OLS regression
+
+### Pearson's r - Correlation Coefficient
+
+Pearson's r Learning links:
+*   [Pearson Correlation Coefficient (r) | Guide & Examples](https://www.scribbr.com/statistics/pearson-correlation-coefficient/)
+*   [Correlation Test Between Two Variables in R](http://www.sthda.com/english/wiki/correlation-test-between-two-variables-in-r)
+
+Note: the use of the `ggscatter()` function from the `ggpubr` package to plot the *Pearson's rho* or *Pearson's r* statistic; the Correlation Coefficient. This number can also be squared and represented as `r2`. However, this differs from the `R^2` or `R2` or "R-squared" of a linear model fit, known as the Coefficient of Determination. This is explained a bit more below.
+
+```{r uni_variate_Regression}
+boston_sub_200k <- st_drop_geometry(boston.sf) %>% 
+filter(SalePrice <= 2000000) 
+
+cor.test(boston_sub_200k$LivingArea,
+         boston_sub_200k$SalePrice, 
+         method = "pearson")
+
+ggscatter(boston_sub_200k,
+          x = "LivingArea",
+          y = "SalePrice",
+          add = "reg.line") +
+  stat_cor(label.y = 2500000) 
+
+```
+
+
+The Pearson's rho - Correlation Coefficient and the R2 Coefficient of Determination are **very** frequently confused! It is a really common mistake, so take a moment to understand what they are and how they differ. [This blog](https://towardsdatascience.com/r%C2%B2-or-r%C2%B2-when-to-use-what-4968eee68ed3) is a good explanation. In summary:
+
+*   The `r` is a measure the degree of relationship between two variables say x and y. It can go between -1 and 1.  1 indicates that the two variables are moving in unison.
+
+*   However, `R2` shows percentage variation in y which is explained by all the x variables together. Higher the better. It is always between 0 and 1. It can never be negative – since it is a squared value.
+
+* In a simple linear regression with just two variables 'r' and 'R2' are the same. It's when we add more variables to a multiple linear regression when they diverge.
+
+## Univarite Regression
+
+### R2 - Coefficient of Determination
+
+Discussed above, the `R^2` or "R-squared" is a common way to validate the predictions of a linear model. Below we run a linear model on our data with the `lm()` function and get the output in our R terminal. At first this is an intimidating amount of information! Here is a [great resource](https://towardsdatascience.com/understanding-linear-regression-output-in-r-7a9cbda948b3) to understand how that output is organized and what it means.  
+
+What we are focusing on here is that `R-squared`,  `Adjusted R-squared` and the `Coefficients`.
+
+What's the `R2` good for as a diagnostic of model quality?
+
+Can somebody interpret the coefficient?
+
+Note: Here we use `ggscatter` with the `..rr.label` argument to show the `R2` Coefficient of Determination.
+
+```{r simple_reg}
+# Fit linear regression model
+livingReg <- lm(SalePrice ~ LivingArea, data = boston_sub_200k)
+
+# Print summary of regression results
+summary(livingReg)
+
+# Create scatterplot with regression line
+ggscatter(
+  data = boston_sub_200k,
+  x = "LivingArea",            # Predictor variable (x-axis)
+  y = "SalePrice",             # Outcome variable (y-axis)
+  add = "reg.line"             # Add regression line to the plot
+) +
+  # Add correlation coefficient and p-value to the plot
+  stat_cor(
+    aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+    label.y = 2500000          # Adjust label position on the y-axis
+  ) +
+  # Add equation of the regression line to the plot
+  stat_regline_equation(label.y = 2250000)
+
+```
+
+
+## Prediction example
+
+Make a prediction using the coefficient, intercept etc.,
+
+```{r calculate prediction}
+# View coefficients of the linear regression model
+coefficients(livingReg)
+
+# Define new LivingArea value
+new_LivingArea <- 4000
+
+# Calculate predicted SalePrice "by hand"
+predicted_by_hand <- 378370.01571 + 88.34939 * new_LivingArea
+
+# Predict SalePrice using the predict() function
+predicted_with_predict <- predict(livingReg, newdata = data.frame(LivingArea = 4000))
+
+# View the predicted values
+predicted_by_hand
+predicted_with_predict
+
+```
+
+
+## Multivariate Regression
+
+Let's take a look at this regression - how are we creating it?
+
+What's up with these categorical variables?
+
+Better R-squared - does that mean it's a better model?
+
+```{r mutlivariate_regression}
+reg1 <- lm(SalePrice ~ ., data = boston_sub_200k %>% 
+                                 dplyr::select(SalePrice, LivingArea,  
+                                               GROSS_AREA, R_TOTAL_RM, NUM_FLOORS,
+                                               R_BDRMS, R_FULL_BTH, R_HALF_BTH, 
+                                               R_KITCH, R_AC, R_FPLACE))
+
+summary(reg1)
+```
+
+## Marginal Response Plots
+
+Let's try some of these out. They help you learn more about the relationships in the model.
+
+
+Plot of Marginal Response:
+
+effect_plot() is used to visualize the marginal response of the outcome variable (dependent variable) with respect to the predictor variable R_BDRMS in the linear regression model reg1.
+pred = R_BDRMS specifies R_BDRMS as the predictor variable to be plotted.
+interval = TRUE adds confidence intervals to the plot.
+plot.points = TRUE includes individual data points in the plot.
+
+Interpretation of Marginal Effects:
+
+The plot of marginal response helps visualize how the outcome variable changes as a predictor variable varies, holding other variables constant.
+It provides insights into the relationship between the predictor variable and the outcome variable, allowing researchers to understand the direction and strength of the relationship.
+
+
+Plot Coefficients:
+
+plot_summs() is used to plot coefficients from the regression model reg1.
+scale = TRUE scales the coefficients for better comparison if the predictors are on different scales.
+Plot Multiple Model Coefficients:
+
+plot_summs() is also used to plot coefficients from multiple regression models.
+In the third line, list(reg1, livingReg) passes a list of regression models (reg1 and livingReg) to be plotted together for comparison.
+
+
+```{r effect_plots}
+## Plot of marginal response
+effect_plot(reg1, pred = R_BDRMS, interval = TRUE, plot.points = TRUE)
+
+## Plot coefficients
+plot_summs(reg1, scale = TRUE)
+
+## plot multiple model coeffs
+plot_summs(reg1, livingReg)
+
+
+```
+
+
+# cross validation
+This is a slightly nicer way of doing the CV as compared to the warm-up example.
+```{r cv}
+# Load necessary libraries
+
+# Define the control parameters for k-fold cross-validation
+control <- trainControl(method = "cv",    # Use k-fold cross-validation
+                        number = 10,      # Number of folds
+                        verboseIter = TRUE,  # Show verbose output
+                        returnData = FALSE,  # Don't return resampled data
+                        savePredictions = TRUE,  # Save predictions
+                        classProbs = FALSE,  # Don't compute class probabilities
+                        summaryFunction = defaultSummary)  # Use default summary function
+
+# Train the linear regression model using k-fold cross-validation
+lm_cv <- train(SalePrice ~ LivingArea,  # Formula for the linear regression model
+               data = boston_sub_200k,  # Dataset
+               method = "lm",           # Specify "lm" for linear regression
+               trControl = control)     # Use the defined control parameters
+
+# View the cross-validation results
+print(lm_cv)
+
+
+# Plot observed versus predicted values
+plot(lm_cv$pred$obs, lm_cv$pred$pred, 
+     xlab = "Observed", ylab = "Predicted", 
+     main = "Observed vs Predicted Values")
+
+# Add a diagonal line for reference
+abline(0, 1, col = "red")
+
+
+```
+
+
+RMSE (Root Mean Squared Error):
+
+RMSE is the square root of the average of the squared differences between predicted and observed values.
+It penalizes large errors more heavily than small errors because it squares the differences.
+RMSE is sensitive to outliers because of the squaring operation.
+
+MAE (Mean Absolute Error):
+
+MAE is the average of the absolute differences between predicted and observed values.
+It treats all errors equally regardless of their magnitude.
+MAE is less sensitive to outliers compared to RMSE because it does not square the differences.
+
+
+
+The case of a LOOCV
+```{r loocv}
+# Set up leave-one-out cross-validation
+control <- trainControl(method = "LOOCV",     # Use leave-one-out cross-validation
+                        number = nrow(boston_sub_200k),  # Number of folds = number of observations
+                        verboseIter = TRUE,  # Show verbose output
+                        returnData = FALSE,  # Don't return resampled data
+                        savePredictions = TRUE,  # Save predictions
+                        classProbs = FALSE,  # Don't compute class probabilities
+                        summaryFunction = defaultSummary)  # Use default summary function
+
+# Train the linear regression model using leave-one-out cross-validation
+lm_loocv <- train(SalePrice ~ LivingArea,  # Formula for the linear regression model
+                  data = boston_sub_200k,  # Dataset
+                  method = "lm",           # Specify "lm" for linear regression
+                  trControl = control)     # Use the defined control parameters
+
+# View the cross-validation results
+print(lm_loocv)
+
+```
+
+How to interpret?
+Overall, based on these metrics:
+
+The model's RMSE and MAE suggest that the average prediction error is approximately 245,389.9 and 166,415.2, respectively.
+
+The Rsquared value indicates that around 10.78% of the variability in SalePrice is explained by the model's predictor variables.
+
+
+
+## Try to engineer a 'dummy variable' out of the other variables in an attempt to parameterize a variable that suggests a big or fancy house or levels of fanciness.
+## How does this affect your model?
+
+```{r}
+
+
+```
