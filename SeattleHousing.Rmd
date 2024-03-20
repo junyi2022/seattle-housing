@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Load some libraries
 
+library(tidycensus)
 library(tidyverse)
 library(sf)
 library(spdep)
@@ -33,9 +34,9 @@ library(stargazer)
 library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
-# library(geosphere)
-# library(parallel)
-# library(sp)
+library(geosphere)
+library(parallel)
+library(sp)
 library(spatstat)
 
 # functions and data directory
@@ -337,6 +338,31 @@ Seattle.sf_tracts2$streetcar.station <- as.integer(Seattle.sf_tracts2$streetcar.
 
 
 ```
+## Demographics
+
+```{r}
+Demo <- get_acs(geography = "tract", 
+          variables = c("B01001_001E", "B01001A_001E", "B06011_001E"), 
+          year = 2022, 
+          state = "53", 
+          county = "033", 
+          geometry = T, 
+          output = "wide") %>%
+  st_transform(crs = 2926) %>%
+  rename(TotalPop = B01001_001E,
+         NumberWhites = B01001A_001E,
+         MedIncome = B06011_001E) %>%
+  mutate(pctWhite = NumberWhites / TotalPop)%>%
+  select(-NAME, -GEOID)
+
+Demo <- st_transform(Demo, st_crs(Seattle.sf_tracts2))
+
+Seattle.sf_tracts2 <- st_join(Seattle.sf_tracts2, Demo, left = TRUE)
+Seattle.sf_tracts2 <- Seattle.sf_tracts2 %>%
+  select(-contains("B01"), -contains("B06"))
+
+
+```
 
 
 # Analysis Variables
@@ -435,7 +461,7 @@ numericVars %>%
 
 Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
   mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter, canopy=canopy$Can_P, TrafficDis=distance$dist) %>%  
-  select(Age, price, bedrooms, bathrooms, sqft_living, floors, waterfront, view, condition, grade, crime_count, hosp_nn1, school_nn1, parks_count, cross_count, streetcar.station, canopy, TrafficDis) %>% 
+  select(Age, price, bedrooms, bathrooms, sqft_living, waterfront, view, condition, grade, crime_count, hosp_nn1, school_count, parks_count, cross_count, canopy, TrafficDis, pctWhite,  MedIncome) %>% 
   filter(price <= 2000000) 
 
 Seattle_final <- Seattle_final %>%
@@ -443,17 +469,10 @@ Seattle_final <- Seattle_final %>%
 
 reg1 <- lm(price ~ ., data = Seattle_final)
 
-## comparison model
-reg2 <- lm(price ~ Age + bedrooms +  
-                 sqft_living + floors + waterfront + I(view^2) + condition + grade + crime_count +   + hosp_nn1 + I(school_nn1^2) +
-                 parks_count + I(cross_count^2) +
-                 streetcar.station + canopy + TrafficDis, 
-           data = Seattle_final)
-
 
 summary(reg1)
 
-summary(reg2)
+
 ```
 
 
