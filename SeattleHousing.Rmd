@@ -364,6 +364,9 @@ Seattle_final <- Seattle_final %>%
 
 reg1 <- lm(price ~ ., data = Seattle_final)
 
+## comparison model
+reg2 <- lm(price ~ cross_count, data = Seattle_final)
+
 summary(reg1)
 ```
 
@@ -412,9 +415,14 @@ Seattle.test <-
 #MAE
 mean(Seattle.test$SalePrice.AbsError, na.rm = T)
 
+## absolute difference between the predicted value (often a forecast or an estimate produced by a model) and the actual value observed.
+## larger value means larger error, less accurate of the model
+
 #MAPE
 mean(Seattle.test$SalePrice.APE, na.rm = T)
 
+## Mean Absolute Percentage Error
+## the error as a percentage of the actual values
 
 ## Plot of marginal response
 effect_plot(reg1, pred = crime_count, interval = TRUE, plot.points = TRUE)
@@ -422,8 +430,8 @@ effect_plot(reg1, pred = crime_count, interval = TRUE, plot.points = TRUE)
 ## Plot coefficients
 plot_summs(reg1, scale = TRUE)
 
-## plot multiple model coeffs
-plot_summs(reg1, crime_count)
+## plot multiple model coeffs, use another model for comparison.
+plot_summs(reg1, reg2)
 
 ```
 
@@ -442,7 +450,7 @@ control <- trainControl(method = "cv",    # Use k-fold cross-validation
                         summaryFunction = defaultSummary)  # Use default summary function
 
 # Train the linear regression model using k-fold cross-validation
-lm_cv <- train(price ~ sqft_living,  # Formula for the linear regression model
+lm_cv <- train(price ~ .,  # Formula for the linear regression model
                data = Seattle_final,  # Dataset
                method = "lm",           # Specify "lm" for linear regression
                trControl = control)     # Use the defined control parameters
@@ -476,7 +484,7 @@ control <- trainControl(method = "LOOCV",     # Use leave-one-out cross-validati
                         summaryFunction = defaultSummary)  # Use default summary function
 
 # Train the linear regression model using leave-one-out cross-validation
-lm_loocv <- train(price ~ sqft_living,  # Formula for the linear regression model
+lm_loocv <- train(price ~ .,  # Formula for the linear regression model
                   data = Seattle_final,  # Dataset
                   method = "lm",           # Specify "lm" for linear regression
                   trControl = control)     # Use the defined control parameters
