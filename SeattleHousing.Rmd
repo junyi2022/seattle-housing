@@ -114,6 +114,15 @@ canopy <-
   st_read("./dataWithoutcrime/tree_3857.geojson") %>%
   st_transform(crs = 2926)
 
+## Transportation
+
+# street car
+
+# Crosswalk
+crosswalk <- 
+  st_read("C:/Users/25077/Desktop/MUSA 508_PPA/5_/github/local/seattle-housing/dataWithoutcrime/Marked_Crosswalks.geojson") %>%
+  st_transform(crs = 2926)
+
 
 ```
 
@@ -146,6 +155,7 @@ ggplot() +
   theme_void()
 
 ```
+
 ## Clean Safety data
 ```{r}
 
@@ -257,6 +267,19 @@ Seattle.sf_tracts2$parks.Buffer <- Seattle.sf_tracts2 %>%
     mutate(counter = 1), ., sum)
 
 ```
+
+## crosswalk
+
+```{r}
+
+#Parks are polygon hard to get distance
+Seattle.sf_tracts2$crosswalk.Buffer <- Seattle.sf_tracts2 %>% 
+    st_buffer(1320) %>% 
+    aggregate(dplyr::select(crosswalk) %>% 
+    mutate(counter = 1), ., sum)
+
+```
+
 
 ## Streetcar stations
 
@@ -411,6 +434,7 @@ Seattle.sf_tracts2$distance <- nearest_segments['dist']
 
 ```
 
+
 # Analysis Variables
 
 ## Analyzing associations
@@ -442,17 +466,17 @@ Next, we will look at correlations for the crime variables (kNN)
 ```{r crime_corr}
 
 # Clean and prepare the data
-boston_cleaned <- boston.sf %>%
+Seattle_Crime <- Seattle.sf_tracts2 %>%
   st_drop_geometry() %>%                   # Remove geometry column (if present)
-  mutate(Age = 2015 - YR_BUILT) %>%        # Calculate Age based on the year built
-  select(SalePrice, starts_with("crime_")) %>%  # Select variables related to crime
-  filter(SalePrice <= 1000000)             # Filter data based on SalePrice
+  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter) %>%        # Calculate Age based on the year built
+  select(price, starts_with("crime_")) %>%  # Select variables related to crime
+  filter(price <= 1000000)             # Filter data based on SalePrice
 
 # Reshape data from wide to long format
-boston_long <- gather(boston_cleaned, Variable, Value, -SalePrice)
+Seattle_Crime_long <- gather(Seattle_Crime, Variable, Value, -price)
 
 # Create scatterplot with linear regression lines for each variable
-ggplot(boston_long, aes(Value, SalePrice)) +   # Set up the plot
+ggplot(Seattle_Crime_long, aes(Value, price)) +   # Set up the plot
   geom_point(size = .5) +                       # Add points for each data point
   geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +  # Add linear regression lines
   facet_wrap(~Variable, nrow = 1, scales = "free") +  # Create separate plots for each variable
@@ -498,163 +522,85 @@ numericVars %>%
 
 ```
 
-# Univarite correlation -> multi-variate OLS regression
-
-### Pearson's r - Correlation Coefficient
-
-Pearson's r Learning links:
-*   [Pearson Correlation Coefficient (r) | Guide & Examples](https://www.scribbr.com/statistics/pearson-correlation-coefficient/)
-*   [Correlation Test Between Two Variables in R](http://www.sthda.com/english/wiki/correlation-test-between-two-variables-in-r)
-
-Note: the use of the `ggscatter()` function from the `ggpubr` package to plot the *Pearson's rho* or *Pearson's r* statistic; the Correlation Coefficient. This number can also be squared and represented as `r2`. However, this differs from the `R^2` or `R2` or "R-squared" of a linear model fit, known as the Coefficient of Determination. This is explained a bit more below.
-
-```{r uni_variate_Regression}
-boston_sub_200k <- st_drop_geometry(boston.sf) %>% 
-filter(SalePrice <= 2000000) 
-
-cor.test(boston_sub_200k$LivingArea,
-         boston_sub_200k$SalePrice, 
-         method = "pearson")
-
-ggscatter(boston_sub_200k,
-          x = "LivingArea",
-          y = "SalePrice",
-          add = "reg.line") +
-  stat_cor(label.y = 2500000) 
-
-```
-
-
-The Pearson's rho - Correlation Coefficient and the R2 Coefficient of Determination are **very** frequently confused! It is a really common mistake, so take a moment to understand what they are and how they differ. [This blog](https://towardsdatascience.com/r%C2%B2-or-r%C2%B2-when-to-use-what-4968eee68ed3) is a good explanation. In summary:
-
-*   The `r` is a measure the degree of relationship between two variables say x and y. It can go between -1 and 1.  1 indicates that the two variables are moving in unison.
-
-*   However, `R2` shows percentage variation in y which is explained by all the x variables together. Higher the better. It is always between 0 and 1. It can never be negative – since it is a squared value.
-
-* In a simple linear regression with just two variables 'r' and 'R2' are the same. It's when we add more variables to a multiple linear regression when they diverge.
-
-## Univarite Regression
-
-### R2 - Coefficient of Determination
-
-Discussed above, the `R^2` or "R-squared" is a common way to validate the predictions of a linear model. Below we run a linear model on our data with the `lm()` function and get the output in our R terminal. At first this is an intimidating amount of information! Here is a [great resource](https://towardsdatascience.com/understanding-linear-regression-output-in-r-7a9cbda948b3) to understand how that output is organized and what it means.  
-
-What we are focusing on here is that `R-squared`,  `Adjusted R-squared` and the `Coefficients`.
-
-What's the `R2` good for as a diagnostic of model quality?
-
-Can somebody interpret the coefficient?
-
-Note: Here we use `ggscatter` with the `..rr.label` argument to show the `R2` Coefficient of Determination.
-
-```{r simple_reg}
-# Fit linear regression model
-livingReg <- lm(SalePrice ~ LivingArea, data = boston_sub_200k)
-
-# Print summary of regression results
-summary(livingReg)
-
-# Create scatterplot with regression line
-ggscatter(
-  data = boston_sub_200k,
-  x = "LivingArea",            # Predictor variable (x-axis)
-  y = "SalePrice",             # Outcome variable (y-axis)
-  add = "reg.line"             # Add regression line to the plot
-) +
-  # Add correlation coefficient and p-value to the plot
-  stat_cor(
-    aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
-    label.y = 2500000          # Adjust label position on the y-axis
-  ) +
-  # Add equation of the regression line to the plot
-  stat_regline_equation(label.y = 2250000)
-
-```
-
-
-## Prediction example
-
-Make a prediction using the coefficient, intercept etc.,
-
-```{r calculate prediction}
-# View coefficients of the linear regression model
-coefficients(livingReg)
-
-# Define new LivingArea value
-new_LivingArea <- 4000
-
-# Calculate predicted SalePrice "by hand"
-predicted_by_hand <- 378370.01571 + 88.34939 * new_LivingArea
-
-# Predict SalePrice using the predict() function
-predicted_with_predict <- predict(livingReg, newdata = data.frame(LivingArea = 4000))
-
-# View the predicted values
-predicted_by_hand
-predicted_with_predict
-
-```
 
 
 ## Multivariate Regression
 
-Let's take a look at this regression - how are we creating it?
-
-What's up with these categorical variables?
-
-Better R-squared - does that mean it's a better model?
 
 ```{r mutlivariate_regression}
-reg1 <- lm(SalePrice ~ ., data = boston_sub_200k %>% 
-                                 dplyr::select(SalePrice, LivingArea,  
-                                               GROSS_AREA, R_TOTAL_RM, NUM_FLOORS,
-                                               R_BDRMS, R_FULL_BTH, R_HALF_BTH, 
-                                               R_KITCH, R_AC, R_FPLACE))
+
+Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
+  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter) %>%  
+  select(Age, price, bedrooms, bathrooms, sqft_living, floors, waterfront, view, condition, grade, crime_count, hosp_nn1, school_nn1, parks_count, cross_count) %>% 
+  filter(price <= 2000000) 
+
+Seattle_final <- Seattle_final %>%
+  mutate_all(~replace(., is.na(.), 0))
+
+reg1 <- lm(price ~ ., data = Seattle_final)
 
 summary(reg1)
 ```
 
-## Marginal Response Plots
 
-Let's try some of these out. They help you learn more about the relationships in the model.
+#Training and Testing Datasets
+
+```{r traintest}
+
+# Split the dataset into a training set and a test set using stratified sampling
+inTrain <- createDataPartition(
+              y = paste(Seattle_final$sqft_lot, Seattle_final$view, 
+                        Seattle_final$yr_built, Seattle_final$school_nn1), 
+              p = .60, list = FALSE)  # Create a vector of indices for the training set
+
+# Subset the dataset to create the training set
+Seattle.training <- Seattle_final[inTrain,]  # Training set
+# Subset the dataset to create the test set
+Seattle.test <- Seattle_final[-inTrain,]     # Test set
+ 
+# Fit a linear regression model to predict Sales Price using selected predictors
+reg.training <- 
+  lm(price ~ ., data = as.data.frame(Seattle.training))
+
+summary(reg.training)
+
+# Make predictions on the test set and evaluate model performance
+
+Seattle.test <-
+  Seattle.test %>%  # Pipe the test set into the following operations
+  # Add a column indicating the type of regression model used
+  mutate(Regression = "Baseline Regression",
+         # Predict sale prices using the trained regression model
+         SalePrice.Predict = predict(reg.training, Seattle.test),
+         # Calculate the difference between predicted and actual sale prices
+         SalePrice.Error = SalePrice.Predict - price,
+         # Calculate the absolute difference between predicted and actual sale prices
+         SalePrice.AbsError = abs(SalePrice.Predict - price),
+         # Calculate the absolute percentage error
+         SalePrice.APE = (abs(SalePrice.Predict - price)) / price)
+```
+
+## examine the model (diagnose)
+
+```{r}
+
+#MAE
+mean(Seattle.test$SalePrice.AbsError, na.rm = T)
+
+#MAPE
+mean(Seattle.test$SalePrice.APE, na.rm = T)
 
 
-Plot of Marginal Response:
-
-effect_plot() is used to visualize the marginal response of the outcome variable (dependent variable) with respect to the predictor variable R_BDRMS in the linear regression model reg1.
-pred = R_BDRMS specifies R_BDRMS as the predictor variable to be plotted.
-interval = TRUE adds confidence intervals to the plot.
-plot.points = TRUE includes individual data points in the plot.
-
-Interpretation of Marginal Effects:
-
-The plot of marginal response helps visualize how the outcome variable changes as a predictor variable varies, holding other variables constant.
-It provides insights into the relationship between the predictor variable and the outcome variable, allowing researchers to understand the direction and strength of the relationship.
-
-
-Plot Coefficients:
-
-plot_summs() is used to plot coefficients from the regression model reg1.
-scale = TRUE scales the coefficients for better comparison if the predictors are on different scales.
-Plot Multiple Model Coefficients:
-
-plot_summs() is also used to plot coefficients from multiple regression models.
-In the third line, list(reg1, livingReg) passes a list of regression models (reg1 and livingReg) to be plotted together for comparison.
-
-
-```{r effect_plots}
 ## Plot of marginal response
-effect_plot(reg1, pred = R_BDRMS, interval = TRUE, plot.points = TRUE)
+effect_plot(reg1, pred = crime_count, interval = TRUE, plot.points = TRUE)
 
 ## Plot coefficients
 plot_summs(reg1, scale = TRUE)
 
 ## plot multiple model coeffs
-plot_summs(reg1, livingReg)
-
+plot_summs(reg1, crime_count)
 
 ```
-
 
 # cross validation
 This is a slightly nicer way of doing the CV as compared to the warm-up example.
@@ -671,8 +617,8 @@ control <- trainControl(method = "cv",    # Use k-fold cross-validation
                         summaryFunction = defaultSummary)  # Use default summary function
 
 # Train the linear regression model using k-fold cross-validation
-lm_cv <- train(SalePrice ~ LivingArea,  # Formula for the linear regression model
-               data = boston_sub_200k,  # Dataset
+lm_cv <- train(price ~ sqft_living,  # Formula for the linear regression model
+               data = Seattle_final,  # Dataset
                method = "lm",           # Specify "lm" for linear regression
                trControl = control)     # Use the defined control parameters
 
@@ -683,34 +629,21 @@ print(lm_cv)
 # Plot observed versus predicted values
 plot(lm_cv$pred$obs, lm_cv$pred$pred, 
      xlab = "Observed", ylab = "Predicted", 
-     main = "Observed vs Predicted Values")
-
-# Add a diagonal line for reference
-abline(0, 1, col = "red")
+     main = "Observed vs Predicted Values") +
+     abline(0, 1, col = "red")
 
 
 ```
 
 
-RMSE (Root Mean Squared Error):
 
-RMSE is the square root of the average of the squared differences between predicted and observed values.
-It penalizes large errors more heavily than small errors because it squares the differences.
-RMSE is sensitive to outliers because of the squaring operation.
-
-MAE (Mean Absolute Error):
-
-MAE is the average of the absolute differences between predicted and observed values.
-It treats all errors equally regardless of their magnitude.
-MAE is less sensitive to outliers compared to RMSE because it does not square the differences.
+RMSE, MAE
 
 
-
-The case of a LOOCV
 ```{r loocv}
 # Set up leave-one-out cross-validation
 control <- trainControl(method = "LOOCV",     # Use leave-one-out cross-validation
-                        number = nrow(boston_sub_200k),  # Number of folds = number of observations
+                        number = nrow(Seattle_final),  # Number of folds = number of observations
                         verboseIter = TRUE,  # Show verbose output
                         returnData = FALSE,  # Don't return resampled data
                         savePredictions = TRUE,  # Save predictions
@@ -718,8 +651,8 @@ control <- trainControl(method = "LOOCV",     # Use leave-one-out cross-validati
                         summaryFunction = defaultSummary)  # Use default summary function
 
 # Train the linear regression model using leave-one-out cross-validation
-lm_loocv <- train(SalePrice ~ LivingArea,  # Formula for the linear regression model
-                  data = boston_sub_200k,  # Dataset
+lm_loocv <- train(price ~ sqft_living,  # Formula for the linear regression model
+                  data = Seattle_final,  # Dataset
                   method = "lm",           # Specify "lm" for linear regression
                   trControl = control)     # Use the defined control parameters
 
@@ -728,12 +661,7 @@ print(lm_loocv)
 
 ```
 
-How to interpret?
-Overall, based on these metrics:
-
-The model's RMSE and MAE suggest that the average prediction error is approximately 245,389.9 and 166,415.2, respectively.
-
-The Rsquared value indicates that around 10.78% of the variability in SalePrice is explained by the model's predictor variables.
+The Rsquared value indicates that around XX.XX% of the variability in SalePrice is explained by the model's predictor variables.
 
 
 
