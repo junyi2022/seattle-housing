@@ -33,7 +33,10 @@ library(stargazer)
 library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
-
+# library(geosphere)
+# library(parallel)
+# library(sp)
+library(spatstat)
 
 # functions and data directory
 root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
@@ -49,7 +52,7 @@ source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-L
 
 # initial housing data
 housingData <- 
-  read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/data/kc_house_data.csv"))
+  read.csv(file.path("./dataWithoutcrime/kc_house_data.csv"))
 
 Seattle.sf <- 
   housingData %>% 
@@ -59,7 +62,7 @@ Seattle.sf <-
 
 # Seattle geo_Tracts
 tracts <- 
-  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/2010_Census_Tract_Seattle.geojson") %>%
+  st_read("./dataWithoutcrime/2010_Census_Tract_Seattle.geojson") %>%
   st_transform(crs = 2926)
 
 #Cut the housing data to fit into the Seattle boundary
@@ -71,8 +74,11 @@ Seattle.sf_tracts2 <- Seattle.sf_tracts %>%
 
 # Add-in Data
 ## social
+#crime <- 
+#  read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/data/SPD_Crime_Data.csv"))
+
 crime <- 
-  read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/data/SPD_Crime_Data.csv"))
+  read.csv(file.path("SPD_Crime_Data__2008-Present_20240319.csv"))
 
 Crime.sf <- 
   crime %>% 
@@ -86,11 +92,26 @@ School <-
   st_transform(crs = 2926)
 
 Parks <- 
-  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/seattle-parks-osm.geojson") %>%
+  st_read("./dataWithoutcrime/seattle-parks-osm.geojson") %>%
   st_transform(crs = 2926)
 
 Hospital <- 
-  st_read("C:/Users/25077/Desktop/PPA_Midterm/data/Hospital.geojson") %>%
+  st_read("./dataWithoutcrime/Hospital.geojson") %>%
+  st_transform(crs = 2926)
+
+## Streetcar
+streetcar <- 
+  st_read("./dataWithoutcrime/streetcar_3857.geojson") %>%
+  st_transform(crs = 2926)
+
+## Traffic flow
+traffic <- 
+  st_read("./dataWithoutcrime/traffic_3857.geojson") %>%
+  st_transform(crs = 2926)
+
+## canopy
+canopy <- 
+  st_read("./dataWithoutcrime/tree_3857.geojson") %>%
   st_transform(crs = 2926)
 
 ## Transportation
@@ -256,6 +277,160 @@ Seattle.sf_tracts2$crosswalk.Buffer <- Seattle.sf_tracts2 %>%
     st_buffer(1320) %>% 
     aggregate(dplyr::select(crosswalk) %>% 
     mutate(counter = 1), ., sum)
+
+```
+
+
+## Streetcar stations
+
+```{r}
+
+# Streetcar buffer
+streetcar.Buffer <- st_union(st_buffer(streetcar, dist=1000)) 
+
+# Generate the plot
+ggplot() +
+  geom_sf(data = tracts, fill = "lightgrey", col = "white") +
+  geom_sf(data = streetcar.Buffer, fill = "orange", col = "white") +
+  labs(title = "Streetcar buffer") +
+  theme_void()
+
+# Assign to overall dataframe
+Seattle.sf_tracts2$streetcar.station <- st_within(Seattle.sf_tracts2, streetcar.Buffer) %>% lengths > 0
+
+```
+
+## canopy
+
+```{r}
+
+# join canopy to housing points
+Seattle.sf_tracts3 <- st_join(Seattle.sf_tracts2, canopy, left = TRUE)
+
+Seattle.sf_tracts3 <- Seattle.sf_tracts3 %>%
+  st_drop_geometry() %>%
+  select(id, Can_P)
+
+# put the column into the overall dataframe
+Seattle.sf_tracts2$canopy <- Seattle.sf_tracts3["Can_P"]
+
+```
+
+## distance to major roads
+
+```{r}
+
+
+# traffic_relation <- nearestsegment(as.ppp(Seattle.sf_tracts2), as.psp(traffic))
+
+
+# Convert Seattle.sf_tracts2 to a point pattern, specifying mark column(s)
+Seattle_points <- as.ppp(Seattle.sf_tracts2)
+
+# Convert traffic to a line segment pattern
+traffic_lines <- as.psp(traffic)
+
+# Find nearest line segment to each point
+nearest_segments <- nncross(Seattle_points, traffic_lines)
+
+# put the column into the overall dataframe
+Seattle.sf_tracts2$distance <- nearest_segments['dist']
+
+```
+
+
+```{r}
+
+# need to use 4326 for the following analysis
+# traffic <- st_transform(traffic, crs = 4326)
+# Seattle.sf_tracts2 <- st_transform(Seattle.sf_tracts2, crs = 4326)
+# 
+# # converts the extracted geometry vector into a Spatial object
+# points.sp <- as_Spatial(st_geometry(Seattle.sf_tracts2))
+# # add index
+# points.sp$system.index <- Seattle.sf_tracts2$id
+# # do the same for line
+# lines.sp <- as_Spatial(st_geometry(traffic), IDs = as.character(traffic$OBJECTID)) 
+# 
+# 
+# # Calculate the number of cores
+# no_cores <- detectCores() - 1
+# 
+# # Split features in n parts
+# n <- 100 # split pixels by 100 points
+# parts <- split(1:nrow(Seattle.sf_tracts2), cut(1:nrow(Seattle.sf_tracts2), n))
+# 
+# lines.sp <- as_Spatial(st_geometry(traffic), IDs = as.character(traffic$OBJECTID)) 
+# 
+# # Initiate cluster (after loading all the necessary object to R environment: BRA_adm2, parts, r.raster, n)
+# cl <- makeCluster(no_cores, type = "PSOCK")
+# print(cl)
+# 
+# # Multithread dist2Line function ------------------------------------------
+# 
+# # Parallelize dist2Line function
+# system.time(distParts <- parLapply(cl = cl, 
+#                                    X = 1:n, 
+#                                    fun = function(x) {
+#                                      points.sp <- as_Spatial(st_geometry(Seattle.sf_tracts2[parts[[x]],]))
+#                                      points.sp$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
+#                                      dist <- geosphere::dist2Line(p = points.sp, line = lines.sp)
+#                                      # Convert dist to data.frame
+#                                      dist.df <- as.data.frame(dist)
+#                                      # Add points ID column to dist.df
+#                                      dist.df$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
+#                                      colnames(dist.df) <- c("distance", "lon", "lat", "OBJECTID", "system.index")
+#                                      gc(verbose = FALSE) # free memory
+#                                      return(dist.df)
+#                                    }))
+# 
+# # user   system  elapsed 
+# # 1.869    2.067 1314.271
+# 
+# # Finish
+# stopCluster(cl)
+# 
+# # Bind rows
+# distBind <- do.call("rbind", distParts)
+# 
+# 
+# 
+# # Calculate the number of cores
+# no_cores <- detectCores() - 1
+# 
+# # Split features in n parts
+# n <- 100 # split pixels by 100 points
+# parts <- split(1:nrow(Seattle.sf_tracts2), cut(1:nrow(Seattle.sf_tracts2), n))
+# 
+# lines.sp <- sf::st_as_sf(traffic, IDs = as.character(traffic$OBJECTID))
+# 
+# # Initiate cluster
+# cl <- makeCluster(no_cores, type = "PSOCK")
+# print(cl)
+# 
+# clusterExport(cl, c("Seattle.sf_tracts2", "traffic"))
+# clusterEvalQ(cl, library(sf))
+# clusterEvalQ(cl, library(sp))
+# clusterEvalQ(cl, library(geosphere))
+# 
+# # Multithread dist2Line function ------------------------------------------
+# 
+# # Parallelize dist2Line function
+# system.time(distParts <- parLapply(cl, parts, function(x) {
+#   points.sp <- sf::st_as_sf(Seattle.sf_tracts2[parts[[x]], ])
+#   points.sp$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
+#   dist <- geosphere::dist2Line(p = points.sp, line = lines.sp)
+#   dist.df <- as.data.frame(dist)
+#   dist.df$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
+#   colnames(dist.df) <- c("distance", "lon", "lat", "OBJECTID", "system.index")
+#   return(dist.df)
+# }))
+# 
+# # Finish
+# stopCluster(cl)
+# 
+# # Bind rows
+# distBind <- do.call("rbind", distParts)
 
 ```
 
