@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Load some libraries
 
+library(tidycensus)
 library(tidyverse)
 library(sf)
 library(spdep)
@@ -33,9 +34,9 @@ library(stargazer)
 library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
-# library(geosphere)
-# library(parallel)
-# library(sp)
+library(geosphere)
+library(parallel)
+library(sp)
 library(spatstat)
 
 # functions and data directory
@@ -74,11 +75,7 @@ Seattle.sf_tracts2 <- Seattle.sf_tracts %>%
 
 # Add-in Data
 ## social
-#crime <- 
-#  read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/data/SPD_Crime_Data.csv"))
-
-crime <- 
-  read.csv(file.path("SPD_Crime_Data__2008-Present_20240319.csv"))
+crime <- read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/data/SPD_Crime_Data.csv"))
 
 Crime.sf <- 
   crime %>% 
@@ -336,101 +333,34 @@ nearest_segments <- nncross(Seattle_points, traffic_lines)
 # put the column into the overall dataframe
 Seattle.sf_tracts2$distance <- nearest_segments['dist']
 
-```
+# Assuming you have a dataframe 'df' and the column 'streetcar.station' is logical
+Seattle.sf_tracts2$streetcar.station <- as.integer(Seattle.sf_tracts2$streetcar.station)
 
+
+```
+## Demographics
 
 ```{r}
+Demo <- get_acs(geography = "tract", 
+          variables = c("B01001_001E", "B01001A_001E", "B06011_001E"), 
+          year = 2022, 
+          state = "53", 
+          county = "033", 
+          geometry = T, 
+          output = "wide") %>%
+  st_transform(crs = 2926) %>%
+  rename(TotalPop = B01001_001E,
+         NumberWhites = B01001A_001E,
+         MedIncome = B06011_001E) %>%
+  mutate(pctWhite = NumberWhites / TotalPop)%>%
+  select(-NAME, -GEOID)
 
-# need to use 4326 for the following analysis
-# traffic <- st_transform(traffic, crs = 4326)
-# Seattle.sf_tracts2 <- st_transform(Seattle.sf_tracts2, crs = 4326)
-# 
-# # converts the extracted geometry vector into a Spatial object
-# points.sp <- as_Spatial(st_geometry(Seattle.sf_tracts2))
-# # add index
-# points.sp$system.index <- Seattle.sf_tracts2$id
-# # do the same for line
-# lines.sp <- as_Spatial(st_geometry(traffic), IDs = as.character(traffic$OBJECTID)) 
-# 
-# 
-# # Calculate the number of cores
-# no_cores <- detectCores() - 1
-# 
-# # Split features in n parts
-# n <- 100 # split pixels by 100 points
-# parts <- split(1:nrow(Seattle.sf_tracts2), cut(1:nrow(Seattle.sf_tracts2), n))
-# 
-# lines.sp <- as_Spatial(st_geometry(traffic), IDs = as.character(traffic$OBJECTID)) 
-# 
-# # Initiate cluster (after loading all the necessary object to R environment: BRA_adm2, parts, r.raster, n)
-# cl <- makeCluster(no_cores, type = "PSOCK")
-# print(cl)
-# 
-# # Multithread dist2Line function ------------------------------------------
-# 
-# # Parallelize dist2Line function
-# system.time(distParts <- parLapply(cl = cl, 
-#                                    X = 1:n, 
-#                                    fun = function(x) {
-#                                      points.sp <- as_Spatial(st_geometry(Seattle.sf_tracts2[parts[[x]],]))
-#                                      points.sp$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
-#                                      dist <- geosphere::dist2Line(p = points.sp, line = lines.sp)
-#                                      # Convert dist to data.frame
-#                                      dist.df <- as.data.frame(dist)
-#                                      # Add points ID column to dist.df
-#                                      dist.df$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
-#                                      colnames(dist.df) <- c("distance", "lon", "lat", "OBJECTID", "system.index")
-#                                      gc(verbose = FALSE) # free memory
-#                                      return(dist.df)
-#                                    }))
-# 
-# # user   system  elapsed 
-# # 1.869    2.067 1314.271
-# 
-# # Finish
-# stopCluster(cl)
-# 
-# # Bind rows
-# distBind <- do.call("rbind", distParts)
-# 
-# 
-# 
-# # Calculate the number of cores
-# no_cores <- detectCores() - 1
-# 
-# # Split features in n parts
-# n <- 100 # split pixels by 100 points
-# parts <- split(1:nrow(Seattle.sf_tracts2), cut(1:nrow(Seattle.sf_tracts2), n))
-# 
-# lines.sp <- sf::st_as_sf(traffic, IDs = as.character(traffic$OBJECTID))
-# 
-# # Initiate cluster
-# cl <- makeCluster(no_cores, type = "PSOCK")
-# print(cl)
-# 
-# clusterExport(cl, c("Seattle.sf_tracts2", "traffic"))
-# clusterEvalQ(cl, library(sf))
-# clusterEvalQ(cl, library(sp))
-# clusterEvalQ(cl, library(geosphere))
-# 
-# # Multithread dist2Line function ------------------------------------------
-# 
-# # Parallelize dist2Line function
-# system.time(distParts <- parLapply(cl, parts, function(x) {
-#   points.sp <- sf::st_as_sf(Seattle.sf_tracts2[parts[[x]], ])
-#   points.sp$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
-#   dist <- geosphere::dist2Line(p = points.sp, line = lines.sp)
-#   dist.df <- as.data.frame(dist)
-#   dist.df$system.index <- Seattle.sf_tracts2$id[parts[[x]]]
-#   colnames(dist.df) <- c("distance", "lon", "lat", "OBJECTID", "system.index")
-#   return(dist.df)
-# }))
-# 
-# # Finish
-# stopCluster(cl)
-# 
-# # Bind rows
-# distBind <- do.call("rbind", distParts)
+Demo <- st_transform(Demo, st_crs(Seattle.sf_tracts2))
+
+Seattle.sf_tracts2 <- st_join(Seattle.sf_tracts2, Demo, left = TRUE)
+Seattle.sf_tracts2 <- Seattle.sf_tracts2 %>%
+  select(-contains("B01"), -contains("B06"))
+
 
 ```
 
@@ -530,8 +460,8 @@ numericVars %>%
 ```{r mutlivariate_regression}
 
 Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
-  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter) %>%  
-  select(Age, price, bedrooms, bathrooms, sqft_living, floors, waterfront, view, condition, grade, crime_count, hosp_nn1, school_nn1, parks_count, cross_count) %>% 
+  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter, canopy=canopy$Can_P, TrafficDis=distance$dist) %>%  
+  select(Age, price, bedrooms, bathrooms, sqft_living, waterfront, view, condition, grade, crime_count, hosp_nn1, school_count, parks_count, cross_count, canopy, TrafficDis, pctWhite,  MedIncome) %>% 
   filter(price <= 2000000) 
 
 Seattle_final <- Seattle_final %>%
@@ -539,10 +469,10 @@ Seattle_final <- Seattle_final %>%
 
 reg1 <- lm(price ~ ., data = Seattle_final)
 
-## comparison model
-reg2 <- lm(price ~ cross_count, data = Seattle_final)
 
 summary(reg1)
+
+
 ```
 
 
