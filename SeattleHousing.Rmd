@@ -77,7 +77,7 @@ neighborhood <-
   st_transform(crs = 2926)
 
 ## social
-crime <- read.csv(file.path("SPD_Crime_Data__2008-Present_20240319.csv"))
+crime <- read.csv(file.path("C:/Users/25077/Desktop/MUSA 508_PPA/5_/github/local/seattle-housing/dataWithoutcrime/SPD_Crime_Data.csv"))
 
 Crime.sf <- 
   crime %>% 
@@ -147,13 +147,6 @@ ggplot() +
 ## Clean Safety data
 ```{r}
 
-#review crime types
-crime %>% 
-group_by(Offense.Parent.Group) %>%
-  summarize(count = n()) %>%
-  arrange(-count) %>% top_n(10) %>%
-  kable() %>%
-  kable_styling()
 
 Seattle.sf_tracts2$crime.Buffer <- Seattle.sf_tracts2 %>% 
     st_buffer(660) %>% 
@@ -228,19 +221,7 @@ Seattle.sf_tracts2 <-
   Seattle.sf_tracts2 %>% 
     mutate(
       hosp_nn1 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(Hospital), k = 1),
-      
-      hosp_nn2 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(Hospital), k = 2), 
-      
-      hosp_nn3 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(Hospital), k = 3), 
-      
-      hosp_nn4 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(Hospital), k = 4), 
-      
-      hosp_nn5 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(Hospital), k = 5))
+                              st_coordinates(Hospital), k = 1))
 
 ```
 
@@ -334,7 +315,7 @@ Seattle.sf_tracts2$streetcar.station <- as.integer(Seattle.sf_tracts2$streetcar.
 ```{r}
 Demo <- get_acs(geography = "tract", 
           variables = c("B01001_001E", "B01001A_001E", "B06011_001E"), 
-          year = 2022, 
+          year = 2018, 
           state = "53", 
           county = "033", 
           geometry = T, 
@@ -389,29 +370,6 @@ ggplot(Seattle_long, aes(Value, price)) +   # Set up the plot
 
 ```
 
-Next, we will look at correlations for the crime variables (kNN)
-
-```{r crime_corr, fig.height=6, fig.width=10}
-
-# Clean and prepare the data
-Seattle_Crime <- Seattle.sf_tracts2 %>%
-  st_drop_geometry() %>%                   # Remove geometry column (if present)
-  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter) %>%        # Calculate Age based on the year built
-  select(price, starts_with("crime_")) %>%  # Select variables related to crime
-  filter(price <= 1000000)             # Filter data based on SalePrice
-
-# Reshape data from wide to long format
-Seattle_Crime_long <- gather(Seattle_Crime, Variable, Value, -price)
-
-# Create scatterplot with linear regression lines for each variable
-ggplot(Seattle_Crime_long, aes(Value, price)) +   # Set up the plot
-  geom_point(size = .5) +                       # Add points for each data point
-  geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +  # Add linear regression lines
-  facet_wrap(~Variable, nrow = 2, scales = "free") +  # Create separate plots for each variable
-  labs(title = "Price as a function of continuous variables") +  # Set plot title
-  theme_minimal()  # Apply a minimal theme to the plot
-
-```
 
 ## Correlation matrix
 
@@ -431,16 +389,6 @@ numericVars <- Seattle.sf_tracts2 %>%
 # Calculate correlation matrix
 correlation_matrix <- cor(numericVars)
 
-# Create correlation plot
-ggcorrplot(
-  correlation_matrix,  # Correlation matrix
-  p.mat = cor_pmat(numericVars),  # p-values for significance
-  colors = c("#25CB10", "white", "#FA7800"),  # Custom color palette
-  type = "lower",  # Lower triangle of the correlation matrix
-  insig = "blank"  # Hide insignificant correlations
-) +
-labs(title = "Correlation across numeric variables")  # Set plot title
-
 
 # yet another way to plot the correlation plot using the corrr library
 numericVars %>% 
@@ -456,6 +404,14 @@ numericVars %>%
 
 
 ```{r mutlivariate_regression}
+Seattle_final_0 <- st_drop_geometry(Seattle.sf_tracts2) %>%
+  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter, canopy=canopy$Can_P, TrafficDis=distance$dist) %>%  
+  select(-contains("Buffer"), -contains("distance"), -contains("date"), -yr_built)%>% 
+  filter(price <= 2000000) 
+
+reg0 <- lm(price ~ ., data = Seattle_final_0)
+
+summary(reg0)
 
 Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
   mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter, canopy=canopy$Can_P, TrafficDis=distance$dist) %>%  
@@ -545,24 +501,6 @@ reg.training <-
   lm(price ~ ., data = as.data.frame(Seattle.training))
 
 summary_training <- summary(reg.training)
-
-# coefficients_table2 <- as.data.frame(summary_training$coefficients)
-# 
-# coefficients_table2$significance <- ifelse(coefficients_table2$`Pr(>|t|)` < 0.001, '***',
-#                                     ifelse(coefficients_table2$`Pr(>|t|)` < 0.01, '**',
-#                                       ifelse(coefficients_table2$`Pr(>|t|)` < 0.05, '*',
-#                                         ifelse(coefficients_table2$`Pr(>|t|)` < 0.1, '.', ''))))
-# 
-# coefficients_table2$p_value <- paste0(round(coefficients_table2$`Pr(>|t|)`, digits = 3), coefficients_table2$significance)
-# coefficients_table2$'t value' <- round(coefficients_table2$'t value', digits = 2)
-# coefficients_table2$'Std. Error' <- round(coefficients_table2$'Std. Error', digits = 2)
-# coefficients_table2$Estimate <- round(coefficients_table2$Estimate, digits = 2)
-# 
-# coefficients_table2 %>%
-#   select(-significance, -`Pr(>|t|)`) %>%
-#   kable(align = "r") %>%
-#   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
-#   footnote(general_title = "\n", general = "Table x")
 
 # Make predictions on the test set and evaluate model performance
 
