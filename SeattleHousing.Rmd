@@ -30,7 +30,6 @@ library(ggstance) # to support jtools plots
 library(ggpubr)    # plotting R^2 value on ggplot point scatter
 library(broom.mixed) # needed for effects plots
 library(RColorBrewer)
-library(stargazer)
 library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
@@ -71,6 +70,12 @@ Seattle.sf_tracts2 <- Seattle.sf_tracts %>%
 
 
 # Add-in Data
+
+# Seattle neighborhood
+neighborhood <- 
+  st_read("./dataWithoutcrime/Neighborhood_Map.geojson") %>%
+  st_transform(crs = 2926)
+
 ## social
 crime <- read.csv(file.path("SPD_Crime_Data__2008-Present_20240319.csv"))
 
@@ -363,7 +368,7 @@ Seattle.sf_tracts2 <- Seattle.sf_tracts2 %>%
 ## Analyzing associations
 
 
-```{r Correlation}
+```{r Correlation, fig.height=7, fig.width=10}
 
 # Remove geometry column (if present), calculate Age, and select relevant variables
 Seattle <- st_drop_geometry(Seattle.sf_tracts2) %>%
@@ -386,7 +391,7 @@ ggplot(Seattle_long, aes(Value, price)) +   # Set up the plot
 
 Next, we will look at correlations for the crime variables (kNN)
 
-```{r crime_corr}
+```{r crime_corr, fig.height=6, fig.width=10}
 
 # Clean and prepare the data
 Seattle_Crime <- Seattle.sf_tracts2 %>%
@@ -402,7 +407,7 @@ Seattle_Crime_long <- gather(Seattle_Crime, Variable, Value, -price)
 ggplot(Seattle_Crime_long, aes(Value, price)) +   # Set up the plot
   geom_point(size = .5) +                       # Add points for each data point
   geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +  # Add linear regression lines
-  facet_wrap(~Variable, nrow = 1, scales = "free") +  # Create separate plots for each variable
+  facet_wrap(~Variable, nrow = 2, scales = "free") +  # Create separate plots for each variable
   labs(title = "Price as a function of continuous variables") +  # Set plot title
   theme_minimal()  # Apply a minimal theme to the plot
 
@@ -416,7 +421,7 @@ Some things to notice in this code; we use `select_if()` to select only the feat
 
 **Let's take a few minutes to interpret this**
 
-```{r correlation_matrix fig.width=10, fig.height=8}
+```{r fig.height=10, fig.width=10}
 # Select only numeric variables and remove rows with missing values
 numericVars <- Seattle.sf_tracts2 %>%
   st_drop_geometry() %>%  # Remove geometry column if present
@@ -441,7 +446,7 @@ labs(title = "Correlation across numeric variables")  # Set plot title
 numericVars %>% 
   correlate() %>% 
   autoplot() +
-  geom_text(aes(label = round(r,digits=2)),size = 1.5)
+  geom_text(aes(label = round(r,digits=2)),size = 2)
 
 ```
 
@@ -638,6 +643,8 @@ plot(lm_cv$pred$obs, lm_cv$pred$pred,
 
 ```
 
+# Distribution of Sale Price Error Testing Set
+
 ```{r}
 
 
@@ -659,14 +666,14 @@ ggplot()+
 ```
 
 
-
+#Mean Absolute Percentage Error By Neighborhood
 
 ```{r}
-to_plot <- st_intersection(Seattle.test_withgeo, tracts %>% dplyr::select("TRACT")) %>% 
+to_plot <- st_intersection(Seattle.test_withgeo, neighborhood %>% dplyr::select("S_HOOD")) %>% 
   st_drop_geometry() %>% 
-  group_by(TRACT) %>%
+  group_by(S_HOOD) %>%
   summarise(mean.MAPE = mean(SalePrice.APE, na.rm = T)) %>% 
-  left_join(tracts) %>% 
+  left_join(neighborhood) %>% 
   st_sf()
 to_plot %>%
   ggplot() + 
@@ -685,7 +692,7 @@ to_plot %>%
 ```
 
 
-RMSE, MAE
+#RMSE, MAE
 
 
 ```{r loocv}
@@ -705,7 +712,8 @@ lm_loocv <- train(price ~ .,  # Formula for the linear regression model
                   trControl = control)     # Use the defined control parameters
 
 # View the cross-validation results
-print(lm_loocv)
+# print(lm_loocv)
+# 6669 fold in total
 
 ```
 
