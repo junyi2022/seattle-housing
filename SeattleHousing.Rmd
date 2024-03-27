@@ -34,6 +34,9 @@ library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
 library(spatstat)
+install.packages("stargazer")
+library(stargazer)
+
 
 # functions and data directory
 root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
@@ -331,15 +334,36 @@ Demo <- st_transform(Demo, st_crs(Seattle.sf_tracts2))
 
 Seattle.sf_tracts2 <- st_join(Seattle.sf_tracts2, Demo, left = TRUE)
 Seattle.sf_tracts2 <- Seattle.sf_tracts2 %>%
-  select(-contains("B01"), -contains("B06"))
+  select(-contains("B01"), -contains("B06"))%>%
+  mutate(Age = 2024 - yr_built, parksCount = parks.Buffer$counter, crimeCount=crime.Buffer$counter, schoolCount=school.Buffer$counter, hospitalCount=hosp.Buffer$counter, crosswalkCount=crosswalk.Buffer$counter, canopyPercent=canopy$Can_P, distance=distance$dist) 
 
 
 ```
 
 ## Summarize and preview the variables
--stargazer
+
+Categorized, summarized.
 
 ```{r preview the data}
+
+
+table_Seattle <- as.data.frame(Seattle.sf_tracts2)
+table_Seattle <- Seattle.sf_tracts2 %>% select(-geometry)
+
+
+#category of the data
+internal_character <- table_Seattle[, c("bedrooms", "bathrooms", "sqft_living","sqft_lot", "floors", "condition", "grade")]
+Structure_character <- table_Seattle[, c("condition", "grade", "Age", "yr_renovated")]
+amenities <- table_Seattle[, c("parksCount", "schoolCount", "hospitalCount", "crosswalkCount", "canopyPercent", "distance", "hosp_nn1", "school_nn1")] 
+spatial_character <- table_Seattle[, c( "waterfront", "view")]
+safety <- table_Seattle[, c( "crime_nn1","crime_nn2","crime_nn3","crime_nn4","crime_nn5", "crimeCount")]
+Demographics <- table_Seattle[, c( "TotalPop", "MedIncome", "pctWhite")]
+
+
+stargazer(internal_character, Structure_character, amenities, spatial_character, safety, Demographics, 
+          type = "text", 
+          title = "Summary Statistics by Category", 
+          summary.stat = c("mean", "sd", "min", "max", "n"))
 
 
 ```
@@ -380,6 +404,7 @@ Some things to notice in this code; we use `select_if()` to select only the feat
 **Let's take a few minutes to interpret this**
 
 ```{r fig.height=10, fig.width=10}
+
 # Select only numeric variables and remove rows with missing values
 numericVars <- Seattle.sf_tracts2 %>%
   st_drop_geometry() %>%  # Remove geometry column if present
@@ -544,12 +569,13 @@ effect_plot(reg1, pred = crime_count, interval = TRUE, plot.points = TRUE)
 plot_summs(reg1, scale = TRUE)
 
 ## plot multiple model coeffs, use another model for comparison.
-# plot_summs(reg1, reg2)
+plot_summs(reg1, reg0)
 
 ```
 
 # cross validation
 This is a slightly nicer way of doing the CV as compared to the warm-up example.
+
 ```{r cv}
 # Load necessary libraries
 
@@ -584,8 +610,6 @@ plot(lm_cv$pred$obs, lm_cv$pred$pred,
 # Distribution of Sale Price Error Testing Set
 
 ```{r}
-
-
 
 Seattle.test_join <- left_join(Seattle.test, housingData, join_by(id == id))
 Seattle.test_withgeo <- 
@@ -627,6 +651,7 @@ to_plot %>%
         panel.border = element_rect(colour = "grey", fill=NA, size=0.4)
         ) +
   labs(title = "Mean Absolute Percentage Error By Neighborhood") 
+
 ```
 
 
@@ -669,6 +694,12 @@ kbl(statistic_summary) %>%
 
 
 The Rsquared value indicates that around XX.XX% of the variability in SalePrice is explained by the model's predictor variables.
+
+
+```{r}
+
+
+```
 
 
 
