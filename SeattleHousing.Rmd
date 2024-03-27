@@ -260,13 +260,6 @@ Seattle.sf_tracts2$crosswalk.Buffer <- Seattle.sf_tracts2 %>%
 # Streetcar buffer
 streetcar.Buffer <- st_union(st_buffer(streetcar, dist=1000)) 
 
-# Generate the plot
-ggplot() +
-  geom_sf(data = tracts, fill = "lightgrey", col = "white") +
-  geom_sf(data = streetcar.Buffer, fill = "orange", col = "white") +
-  labs(title = "Streetcar buffer") +
-  theme_void()
-
 # Assign to overall dataframe
 Seattle.sf_tracts2$streetcar.station <- st_within(Seattle.sf_tracts2, streetcar.Buffer) %>% lengths > 0
 
@@ -367,6 +360,37 @@ stargazer(internal_character, Structure_character, amenities, spatial_character,
 
 
 ```
+## Variable Maps
+```{r}
+## Street Car Station and Buffer
+ggplot() +
+  geom_sf(data = tracts, fill = "lightgrey", col = "white") +
+  geom_sf(data = streetcar.Buffer, fill = "orange", col = "white") +
+  geom_sf(data = streetcar, size = .5, color = "black") +  
+  labs(title = "Streetcar Station and Buffer") +
+  theme_void()
+
+## Hospital
+ggplot() +
+  geom_sf(data = tracts, fill = "lightgrey", col = "white") +
+  geom_sf(data = Hospital, size = .5, color = "red") +
+  labs(title = "Hospital") +
+  theme_void()
+
+## MedIncome
+Demo_income <- st_join(Demo, Seattle.sf_tracts2, left = TRUE)
+
+ggplot(data = Demo) +
+  geom_sf(aes(fill = MedIncome)) +  # Use MedIncome for the fill color
+  scale_fill_gradient(low = "lightyellow", high = "darkgreen", 
+                      name = "Median Income") +  # Adjust color gradient as needed
+  labs(title = "Median Income by Census Tract",
+       subtitle = "Seattle, WA") +
+    theme_void()
+
+
+```
+
 
 # Analysis Variables
 
@@ -377,8 +401,7 @@ stargazer(internal_character, Structure_character, amenities, spatial_character,
 
 # Remove geometry column (if present), calculate Age, and select relevant variables
 Seattle <- st_drop_geometry(Seattle.sf_tracts2) %>%
-  mutate(Age = 2024 - yr_built, parksCount = parks.Buffer$counter, crimeCount=crime.Buffer$counter, schoolCount=school.Buffer$counter, hospitalCount=hosp.Buffer$counter, crosswalkCount=crosswalk.Buffer$counter, canopyPercent=canopy$Can_P, distance=distance$dist) %>%
-  select(price, sqft_living, sqft_lot, Age, crimeCount, schoolCount, hospitalCount, parksCount, crosswalkCount, canopyPercent, distance, NumberWhites, MedIncome) %>%
+  select(price, sqft_living, Age, crimeCount, schoolCount) %>%
   filter(Age < 500)
  
 
