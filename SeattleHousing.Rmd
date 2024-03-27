@@ -34,7 +34,6 @@ library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
 library(spatstat)
-install.packages("stargazer")
 library(stargazer)
 
 
@@ -80,7 +79,7 @@ neighborhood <-
   st_transform(crs = 2926)
 
 ## social
-crime <- read.csv(file.path("C:/Users/25077/Desktop/MUSA 508_PPA/5_/github/local/seattle-housing/dataWithoutcrime/SPD_Crime_Data.csv"))
+crime <- read.csv(file.path("SPD_Crime_Data__2008-Present_20240319.csv"))
 
 Crime.sf <- 
   crime %>% 
@@ -185,7 +184,7 @@ Seattle.sf_tracts2 <-
 #count the school number within the buffer
 Seattle.sf_tracts2$school.Buffer <- Seattle.sf_tracts2 %>% 
     st_buffer(5280) %>% 
-    aggregate(dplyr::select(School) %>% 
+    aggregate(dplyr::select(School ) %>% 
     mutate(counter = 1), ., sum)
 
 ## Nearest Neighbor Feature
@@ -194,18 +193,7 @@ Seattle.sf_tracts2 <-
     mutate(
       school_nn1 = nn_function(st_coordinates(Seattle.sf_tracts2), 
                               st_coordinates(School), k = 1),
-      
-      school_nn2 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(School), k = 2), 
-      
-      school_nn3 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(School), k = 3), 
-      
-      school_nn4 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(School), k = 4), 
-      
-      school_nn5 = nn_function(st_coordinates(Seattle.sf_tracts2), 
-                              st_coordinates(School), k = 5))
+      )
 
 ```
 
@@ -308,8 +296,7 @@ nearest_segments <- nncross(Seattle_points, traffic_lines)
 # put the column into the overall dataframe
 Seattle.sf_tracts2$distance <- nearest_segments['dist']
 
-# Assuming you have a dataframe 'df' and the column 'streetcar.station' is logical
-Seattle.sf_tracts2$streetcar.station <- as.integer(Seattle.sf_tracts2$streetcar.station)
+
 
 
 ```
@@ -317,8 +304,9 @@ Seattle.sf_tracts2$streetcar.station <- as.integer(Seattle.sf_tracts2$streetcar.
 
 ```{r}
 Demo <- get_acs(geography = "tract", 
+          survey = "acs5",
           variables = c("B01001_001E", "B01001A_001E", "B06011_001E"), 
-          year = 2018, 
+          year = 2015, 
           state = "53", 
           county = "033", 
           geometry = T, 
@@ -352,17 +340,38 @@ table_Seattle <- Seattle.sf_tracts2 %>% select(-geometry)
 
 
 #category of the data
-internal_character <- table_Seattle[, c("bedrooms", "bathrooms", "sqft_living","sqft_lot", "floors", "condition", "grade")]
-Structure_character <- table_Seattle[, c("condition", "grade", "Age", "yr_renovated")]
-amenities <- table_Seattle[, c("parksCount", "schoolCount", "hospitalCount", "crosswalkCount", "canopyPercent", "distance", "hosp_nn1", "school_nn1")] 
-spatial_character <- table_Seattle[, c( "waterfront", "view")]
-safety <- table_Seattle[, c( "crime_nn1","crime_nn2","crime_nn3","crime_nn4","crime_nn5", "crimeCount")]
-Demographics <- table_Seattle[, c( "TotalPop", "MedIncome", "pctWhite")]
+internal_character <- table_Seattle[, c("bedrooms", "bathrooms", "sqft_living","sqft_lot", "floors", "condition", "grade")] %>% summary()
+Structure_character <- table_Seattle[, c("condition", "grade", "Age", "yr_renovated")] %>% summary()
+amenities <- table_Seattle[, c("parksCount", "schoolCount", "hospitalCount", "crosswalkCount", "canopyPercent", "distance", "hosp_nn1", "school_nn1")] %>% summary()
+spatial_character <- table_Seattle[, c( "waterfront", "view")] %>% summary()
+safety <- table_Seattle[, c( "crime_nn1","crime_nn2","crime_nn3","crime_nn4","crime_nn5", "crimeCount")] %>% summary()
+Demographics <- table_Seattle[, c( "TotalPop", "MedIncome", "pctWhite")] %>% summary()
+
+# Combine the summaries into one data frame
+summary_data <- cbind(internal_character, Structure_character, amenities, 
+                      spatial_character, safety, Demographics)
+
+summary_data <- summary(table_Seattle[, "bedrooms"])
+
+# Capture summary output as text
+summary_text <- capture.output(summary_data)
+
+# Process summary text to extract values into a data frame
+summary_df <- as.data.frame(matrix(unlist(strsplit(summary_text, "\\s+")), ncol = 6, byrow = TRUE))
+colnames(summary_df) <- c("Min", "Q1", "Median", "Mean", "Q3", "Max")
+
+# Remove first row (labels)
+summary_df <- summary_df[2, ]
+
+# Convert values to numeric (except for 'Statistic' column)
+summary_df[, -1] <- sapply(summary_df[, -1], as.numeric)
 
 
-stargazer(internal_character, Structure_character, amenities, spatial_character, safety, Demographics, 
+
+stargazer(summary_data, Structure_character, amenities, spatial_character, safety, Demographics, 
           type = "text", 
           title = "Summary Statistics by Category", 
+          summary = TRUE,
           summary.stat = c("mean", "sd", "min", "max", "n"))
 
 
