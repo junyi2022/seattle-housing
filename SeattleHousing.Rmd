@@ -48,6 +48,9 @@ source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-L
 
 ## Data Wrangling
 
+1. read in the initial housing data,
+2. 
+
 ```{r get data}
 
 # initial housing data
@@ -80,7 +83,7 @@ neighborhood <-
   st_transform(crs = 2926)
 
 ## social
-crime <- read.csv(file.path("C:/Users/25077/Desktop/MUSA 508_PPA/5_/github/local/seattle-housing/dataWithoutcrime/SPD_Crime_Data.csv"))
+crime <- read.csv(file.path("C:/Users/25077/Desktop/PPA_Midterm/SPD_Crime_Data.csv"))
 
 Crime.sf <- 
   crime %>% 
@@ -124,28 +127,6 @@ crosswalk <-
 
 ```
 
-## Current housing price map
-
-```{r}
-Seattle.sf_tracts2$quintiles <- ntile(Seattle.sf_tracts2$price_per_sqft, 5)
-
-# Convert quintiles to a factor if not already done
-Seattle.sf_tracts2$quintiles <- as.factor(Seattle.sf_tracts2$quintiles)
-
-# Define the palette
-Palette5 <- brewer.pal(5, "YlGnBu")
-
-# Generate the plot
-ggplot() +
-  geom_sf(data = tracts, fill = "lightgrey", col = "white") +
-  geom_sf(data = Seattle.sf_tracts2, aes(colour = quintiles), show.legend = "point", size = .25) +
-  scale_colour_manual(values = Palette5,
-                      labels = c("Low", "Relatively Low", "Medium", "Relatively High", "High"),
-                      name = "Price Per Square Foot Quintiles") +
-  labs(title = "Price Per Square Foot, Seattle") +
-  theme_void()
-
-```
 
 ## Clean Safety data
 ```{r}
@@ -325,10 +306,14 @@ Demo <- get_acs(geography = "tract",
 
 Demo <- st_transform(Demo, st_crs(Seattle.sf_tracts2))
 
+## Finalize the tracts2 data
+#Join the demographics data
+#Clean the data
+
 Seattle.sf_tracts2 <- st_join(Seattle.sf_tracts2, Demo, left = TRUE)
 Seattle.sf_tracts2 <- Seattle.sf_tracts2 %>%
   select(-contains("B01"), -contains("B06"))%>%
-  mutate(Age = 2024 - yr_built, parksCount = parks.Buffer$counter, crimeCount=crime.Buffer$counter, schoolCount=school.Buffer$counter, hospitalCount=hosp.Buffer$counter, crosswalkCount=crosswalk.Buffer$counter, canopyPercent=canopy$Can_P, distance=distance$dist) 
+  mutate(Age = 2024 - yr_built, parksCount = parks.Buffer$counter, crimeCount=crime.Buffer$counter, schoolCount=school.Buffer$counter, hospitalCount=hosp.Buffer$counter, crosswalkCount=crosswalk.Buffer$counter, canopyPercent=canopy$Can_P, TrafficDis=distance$dist) 
 
 
 ```
@@ -339,7 +324,7 @@ Categorized, summarized.
 
 ```{r preview the data}
 
-
+## pull
 table_Seattle <- as.data.frame(Seattle.sf_tracts2)
 table_Seattle <- Seattle.sf_tracts2 %>% select(-geometry)
 
@@ -360,27 +345,55 @@ stargazer(internal_character, Structure_character, amenities, spatial_character,
 
 
 ```
+
+
 ## Variable Maps
-```{r}
+
+1. Current Housing Value
+2. Street Car Station and Buffer
+3. Hospital
+4. Median Income
+
+```{r selected variables map}
+
+
+## Current housing price map
+Seattle.sf_tracts2$quintiles <- ntile(Seattle.sf_tracts2$price, 5)
+
+# Convert quintiles to a factor if not already done
+Seattle.sf_tracts2$quintiles <- as.factor(Seattle.sf_tracts2$quintiles)
+Palette5 <- brewer.pal(5, "YlGnBu")
+
+# Generate the plot
+ggplot() +
+  geom_sf(data = tracts, fill = "lightgrey", col = "white") +
+  geom_sf(data = Seattle.sf_tracts2, aes(colour = quintiles), show.legend = "point", size = .25) +
+  scale_colour_manual(values = Palette5,
+                      labels = c("Low", "Relatively Low", "Medium", "Relatively High", "High"),
+                      name = "Price Per Square Foot Quintiles") +
+  labs(title = "Price Per Square Foot, Seattle") +
+  theme_void()
+
+
 ## Street Car Station and Buffer
 ggplot() +
   geom_sf(data = tracts, fill = "lightgrey", col = "white") +
   geom_sf(data = streetcar.Buffer, fill = "orange", col = "white") +
-  geom_sf(data = streetcar, size = .5, color = "black") +  
+  geom_sf(data = streetcar, col = "black", show.legend = "point", size = .25) +  
   labs(title = "Streetcar Station and Buffer") +
   theme_void()
 
 ## Hospital
+Hospital_clipped <- st_intersection(Hospital, tracts)
 ggplot() +
   geom_sf(data = tracts, fill = "lightgrey", col = "white") +
-  geom_sf(data = Hospital, size = .5, color = "red") +
+  geom_sf(data = Hospital_clipped, size = .5, color = "red") +
   labs(title = "Hospital") +
   theme_void()
 
 ## MedIncome
-Demo_income <- st_join(Demo, Seattle.sf_tracts2, left = TRUE)
-
-ggplot(data = Demo) +
+Demo_clipped <- st_intersection(Demo, tracts)
+ggplot(data = Demo_clipped) +
   geom_sf(aes(fill = MedIncome)) +  # Use MedIncome for the fill color
   scale_fill_gradient(low = "lightyellow", high = "darkgreen", 
                       name = "Median Income") +  # Adjust color gradient as needed
@@ -388,14 +401,12 @@ ggplot(data = Demo) +
        subtitle = "Seattle, WA") +
     theme_void()
 
-
 ```
 
 
 # Analysis Variables
 
 ## Analyzing associations
-
 
 ```{r Correlation, fig.height=7, fig.width=10}
 
@@ -408,12 +419,12 @@ Seattle <- st_drop_geometry(Seattle.sf_tracts2) %>%
 Seattle_long <- gather(Seattle, Variable, Value, -price)
 
 # Create scatterplot with linear regression lines for each variable
-ggplot(Seattle_long, aes(Value, price)) +   # Set up the plot
-  geom_point(size = .5) +                       # Add points for each data point
-  geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +  # Add linear regression lines
-  facet_wrap(~Variable, ncol = 3, scales = "free") +  # Create separate plots for each variable
-  labs(title = "Price as a function of continuous variables") +  # Set plot title
-  theme_minimal()  # Apply a minimal theme to the plot
+ggplot(Seattle_long, aes(Value, price)) + 
+  geom_point(size = .5) +
+  geom_smooth(method = "lm", se = FALSE, colour = "#FA7800") +
+  facet_wrap(~Variable, ncol = 2, scales = "free") + 
+  labs(title = "Price as a function of continuous variables") + 
+  theme_minimal()
 
 ```
 
@@ -452,45 +463,62 @@ numericVars %>%
 
 
 ```{r mutlivariate_regression}
-Seattle_final_0 <- st_drop_geometry(Seattle.sf_tracts2) %>%
-  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter, canopy=canopy$Can_P, TrafficDis=distance$dist) %>%  
-  select(-contains("Buffer"), -contains("distance"), -contains("date"), -yr_built)%>% 
+
+##Baseline Model Reg0
+Seattle_final_0 <- st_drop_geometry(Seattle.sf_tracts2)%>%
+  select(-contains("Buffer"), -contains("distance"), -contains("date"), -yr_built, -canopy, -quintiles)%>% 
   filter(price <= 2000000) 
 
 reg0 <- lm(price ~ ., data = Seattle_final_0)
 
 summary(reg0)
 
-Seattle_final <- st_drop_geometry(Seattle.sf_tracts2) %>%
-  mutate(Age = 2015 - yr_built, crime_count= crime.Buffer$counter, school_count=school.Buffer$counter, hosp_count=hosp.Buffer$counter, parks_count=parks.Buffer$counter, cross_count = crosswalk.Buffer$counter, canopy=canopy$Can_P, TrafficDis=distance$dist) %>%  
-  select(id, Age, price, bedrooms, bathrooms, sqft_living, waterfront, view, condition, grade, crime_count, hosp_nn1, school_count, parks_count, cross_count, canopy, TrafficDis, pctWhite,  MedIncome) %>% 
-  filter(price <= 2000000) 
+## Kable show summary of the model Reg0
+coef_table0 <- as.data.frame(summary_reg0$coefficients)
+coef_table0$significance <- ifelse(coef_table0$`Pr(>|t|)` < 0.001, '***',
+                                    ifelse(coef_table0$`Pr(>|t|)` < 0.01, '**',
+                                      ifelse(coef_table0$`Pr(>|t|)` < 0.05, '*',
+                                        ifelse(coef_table0$`Pr(>|t|)` < 0.1, '.', ''))))
+coef_table0$p_value <- paste0(round(coef_table0$`Pr(>|t|)`, digits = 3), coef_table0$significance)
+coef_table0$'t value' <- round(coef_table0$'t value', digits = 2)
+coef_table0$'Std. Error' <- round(coef_table0$'Std. Error', digits = 2)
+coef_table0$Estimate <- round(coef_table0$Estimate, digits = 2)
 
-Seattle_final <- Seattle_final %>%
-  mutate_all(~replace(., is.na(.), 0))
-
-reg1 <- lm(price ~ ., data = Seattle_final)
-
-summary_reg1 <- summary(reg1)
-
-coefficients_table <- as.data.frame(summary_reg1$coefficients)
-
-coefficients_table$significance <- ifelse(coefficients_table$`Pr(>|t|)` < 0.001, '***',
-                                    ifelse(coefficients_table$`Pr(>|t|)` < 0.01, '**',
-                                      ifelse(coefficients_table$`Pr(>|t|)` < 0.05, '*',
-                                        ifelse(coefficients_table$`Pr(>|t|)` < 0.1, '.', ''))))
-
-coefficients_table$p_value <- paste0(round(coefficients_table$`Pr(>|t|)`, digits = 3), coefficients_table$significance)
-coefficients_table$'t value' <- round(coefficients_table$'t value', digits = 2)
-coefficients_table$'Std. Error' <- round(coefficients_table$'Std. Error', digits = 2)
-coefficients_table$Estimate <- round(coefficients_table$Estimate, digits = 2)
-
-coefficients_table %>%
+coef_table0 %>%
   select(-significance, -`Pr(>|t|)`) %>% 
   kable(align = "r") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
   footnote(general_title = "\n", general = "Table x")
 
+
+## Finalized Model Reg1
+Seattle_final <- Seattle_final_0 %>%
+  select(Age, price, bedrooms, bathrooms, sqft_living, waterfront, view, condition, grade,
+         crimeCount, hosp_nn1, schoolCount, canopyPercent, parksCount, crosswalkCount, TrafficDis,
+         pctWhite, MedIncome)%>%
+  mutate_all(~replace(., is.na(.), 0))
+
+reg1 <- lm(price ~ ., data = Seattle_final)
+
+summary(reg1)
+
+## Kable show summary of the model Reg0
+
+coef_table1 <- as.data.frame(summary_reg1$coefficients)
+coef_table1$significance <- ifelse(coef_table1$`Pr(>|t|)` < 0.001, '***',
+                                    ifelse(coef_table1$`Pr(>|t|)` < 0.01, '**',
+                                      ifelse(coef_table1$`Pr(>|t|)` < 0.05, '*',
+                                        ifelse(coef_table1$`Pr(>|t|)` < 0.1, '.', ''))))
+coef_table1$p_value <- paste0(round(coef_table1$`Pr(>|t|)`, digits = 3), coef_table1$significance)
+coef_table1$'t value' <- round(coef_table1$'t value', digits = 2)
+coef_table1$'Std. Error' <- round(coef_table1$'Std. Error', digits = 2)
+coef_table1$Estimate <- round(coef_table1$Estimate, digits = 2)
+
+coef_table1 %>%
+  select(-significance, -`Pr(>|t|)`) %>% 
+  kable(align = "r") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  footnote(general_title = "\n", general = "Table x")
 
 ```
 
