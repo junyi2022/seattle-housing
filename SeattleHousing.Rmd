@@ -312,45 +312,58 @@ Categorized, summarized.
 
 ```{r preview the data}
 
-## pull
-table_Seattle <- as.data.frame(Seattle.sf_tracts2)
-table_Seattle <- Seattle.sf_tracts2 %>% select(-geometry)
-
+## delete the geometry column
+table_Seattle <- Seattle.sf_tracts2 %>% st_drop_geometry()
 
 #category of the data
-internal_character <- table_Seattle[, c("bedrooms", "bathrooms", "sqft_living","sqft_lot", "floors", "condition", "grade")] %>% summary()
-Structure_character <- table_Seattle[, c("condition", "grade", "Age", "yr_renovated")] %>% summary()
-amenities <- table_Seattle[, c("parksCount", "schoolCount", "hospitalCount", "crosswalkCount", "canopyPercent", "distance", "hosp_nn1", "school_nn1")] %>% summary()
-spatial_character <- table_Seattle[, c( "waterfront", "view")] %>% summary()
-safety <- table_Seattle[, c( "crime_nn1","crime_nn2","crime_nn3","crime_nn4","crime_nn5", "crimeCount")] %>% summary()
-Demographics <- table_Seattle[, c( "TotalPop", "MedIncome", "pctWhite")] %>% summary()
+
+#internal_character
+internal_character_df <- table_Seattle[, c("bedrooms", "bathrooms", "sqft_living","sqft_lot", "floors", "condition", "grade")]
+internal_character <- round(do.call(cbind, lapply(internal_character_df, summary)), digits = 2)
+
+#Structure_character
+Structure_character_df <- table_Seattle[, c("condition", "grade", "Age", "yr_renovated")]
+Structure_character <- round(do.call(cbind, lapply(Structure_character_df, summary)), digits = 2)
+
+#amenities
+amenities_df <- table_Seattle[, c("parksCount", "schoolCount", "hospitalCount", "crosswalkCount", "canopyPercent", "hosp_nn1", "school_nn1")]
+amenities <- round(do.call(cbind, lapply(amenities_df, summary))[1:6,], digits = 2)
+
+#distance column for some reason need to be calculated separatly
+distance_extract_df <- table_Seattle[, c("distance")]
+distance_extract <- round(do.call(cbind, lapply(test, summary)), digits = 2)
+
+amenities_all <- cbind(amenities, distance_extract)
+
+
+#spatial_character
+spatial_character_df <- table_Seattle[, c( "waterfront", "view")]
+spatial_character <- round(do.call(cbind, lapply(spatial_character_df, summary)), digits = 2)
+
+#safety
+safety_df <- table_Seattle[, c( "crime_nn1","crime_nn2","crime_nn3","crime_nn4","crime_nn5", "crimeCount")]
+safety <- round(do.call(cbind, lapply(safety_df, summary)), digits = 2)
+
+#Demographics
+Demographics_df <- table_Seattle[, c( "TotalPop", "MedIncome", "pctWhite")]
+Demographics <- round(do.call(cbind, lapply(Demographics_df, summary))[1:6,], digits = 2)
+
 
 # Combine the summaries into one data frame
-summary_data <- cbind(internal_character, Structure_character, amenities, 
+summary_data <- cbind(internal_character, Structure_character, amenities_all, 
                       spatial_character, safety, Demographics)
 
-summary_data <- summary(table_Seattle[, "bedrooms"])
+long_summary_data <- as.data.frame(t(summary_data))
 
-# Capture summary output as text
-summary_text <- capture.output(summary_data)
-
-# Process summary text to extract values into a data frame
-summary_df <- as.data.frame(matrix(unlist(strsplit(summary_text, "\\s+")), ncol = 6, byrow = TRUE))
-colnames(summary_df) <- c("Min", "Q1", "Median", "Mean", "Q3", "Max")
-
-# Remove first row (labels)
-summary_df <- summary_df[2, ]
-
-# Convert values to numeric (except for 'Statistic' column)
-summary_df[, -1] <- sapply(summary_df[, -1], as.numeric)
-
-
-
-stargazer(summary_data, Structure_character, amenities, spatial_character, safety, Demographics, 
-          type = "text", 
-          title = "Summary Statistics by Category", 
-          summary = TRUE,
-          summary.stat = c("mean", "sd", "min", "max", "n"))
+#generate table
+kbl(long_summary_data, caption = "Statistics Summary") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  pack_rows("Internal Character", 1, 7) %>%
+  pack_rows("Structure Character", 8, 11) %>%
+  pack_rows("Amenities", 12, 19) %>%
+  pack_rows("Spatial character", 20, 21) %>%
+  pack_rows("Safety", 22, 27) %>%
+  pack_rows("Demographics", 28, 30)
 
 
 ```
@@ -480,7 +493,7 @@ Seattle_final_0 <- st_drop_geometry(Seattle.sf_tracts2)%>%
 
 reg0 <- lm(price ~ ., data = Seattle_final_0)
 
-summary(reg0)
+summary_reg0 <- summary(reg0)
 
 ## Kable show summary of the model Reg0
 coef_table0 <- as.data.frame(summary_reg0$coefficients)
@@ -502,14 +515,14 @@ coef_table0 %>%
 
 ## Finalized Model Reg1
 Seattle_final <- Seattle_final_0 %>%
-  select(Age, price, bedrooms, bathrooms, sqft_living, waterfront, view, condition, grade,
+  select(id, Age, price, bedrooms, bathrooms, sqft_living, waterfront, view, condition, grade,
          crimeCount, hosp_nn1, schoolCount, canopyPercent, parksCount, crosswalkCount, TrafficDis,
          pctWhite, MedIncome)%>%
   mutate_all(~replace(., is.na(.), 0))
 
 reg1 <- lm(price ~ ., data = Seattle_final)
 
-summary(reg1)
+summary_reg1 <- summary(reg1)
 
 ## Kable show summary of the model Reg0
 
@@ -621,9 +634,6 @@ mean(Seattle.test$SalePrice.APE, na.rm = T)
 
 ## Mean Absolute Percentage Error
 ## the error as a percentage of the actual values
-
-## Plot of marginal response
-effect_plot(reg1, pred = crime_count, interval = TRUE, plot.points = TRUE)
 
 ## Plot coefficients
 plot_summs(reg1, scale = TRUE)
