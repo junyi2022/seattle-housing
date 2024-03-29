@@ -34,7 +34,7 @@ library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
 library(spatstat)
-library(stargazer)
+library(corrr)
 
 
 # functions and data directory
@@ -331,7 +331,7 @@ amenities <- round(do.call(cbind, lapply(amenities_df, summary))[1:6,], digits =
 
 #distance column for some reason need to be calculated separatly
 distance_extract_df <- table_Seattle[, c("distance")]
-distance_extract <- round(do.call(cbind, lapply(test, summary)), digits = 2)
+distance_extract <- round(do.call(cbind, lapply(distance_extract_df, summary)), digits = 2)
 
 amenities_all <- cbind(amenities, distance_extract)
 
@@ -353,7 +353,11 @@ Demographics <- round(do.call(cbind, lapply(Demographics_df, summary))[1:6,], di
 summary_data <- cbind(internal_character, Structure_character, amenities_all, 
                       spatial_character, safety, Demographics)
 
-long_summary_data <- as.data.frame(t(summary_data))
+long_summary_data <- as.data.frame(t(summary_data)) %>%
+  rename('Minimum' = 'Min.',
+         '1st Quantile' = '1st Qu.',
+         '3rd Quantile' = '3rd Qu.',
+         'Maximun' = 'Max.')
 
 #generate table
 kbl(long_summary_data, caption = "Statistics Summary") %>%
@@ -470,12 +474,35 @@ numericVars <- Seattle.sf_tracts2 %>%
 # Calculate correlation matrix
 correlation_matrix <- cor(numericVars)
 
+# Create correlation plot
+ggcorrplot(
+  correlation_matrix,  # Correlation matrix
+  p.mat = cor_pmat(numericVars),  # p-values for significance
+  colors = c("blue", "white", "red"),  # Custom color palette
+  type = "upper",  # Lower triangle of the correlation matrix
+  insig = "blank",  # Hide insignificant correlations
+  lab = TRUE,
+  lab_size = 2
+) +
+labs(title = "Correlation across numeric variables")  # Set plot title
 
 # yet another way to plot the correlation plot using the corrr library
-numericVars %>% 
-  correlate() %>% 
+# numericVars %>%
+#   correlate() %>%
+#   autoplot() +
+#   geom_text(aes(label = round(r,digits=2)),size = 2)
+
+# Compute correlations
+cor_result <- numericVars %>%
+  correlate()
+
+# Replace NA values with 0
+cor_result[is.na(cor_result)] <- 0
+
+cor_result %>%
   autoplot() +
-  geom_text(aes(label = round(r,digits=2)),size = 2)
+  geom_text(aes(label = round(r,digits=2)),size = 2) +
+labs(title = "Correlation across numeric variables")  # Set plot title
 
 ```
 
@@ -744,19 +771,18 @@ lm_loocv <- train(price ~ .,  # Formula for the linear regression model
                   method = "lm",           # Specify "lm" for linear regression
                   trControl = control)     # Use the defined control parameters
 
-# View the cross-validation results
-# print(lm_loocv)
+
 # 6669 fold in total
 
 ```
 
 ```{r}
 
-statistic_summary <- data.frame(
-  "RMSE" = c("133631.9"),
-  "RSquared" = c("0.7644132"),
-  "MAE" = c("94924.28"))
-  
+# View the cross-validation results
+loocv_results <- lm_loocv['results']
+statistic_summary <- do.call(rbind, loocv_results) %>% select(-contains("intercept"))
+
+
 kbl(statistic_summary) %>%
   kable_styling(bootstrap_options = "striped", full_width = T, position = "left")
 
